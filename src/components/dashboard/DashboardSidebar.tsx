@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { LogOut } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
-import { sidebarConfig, roleLabelMap } from "./sidebarConfig";
+import { sidebarConfig, roleLabelMap, rolePathMap } from "./sidebarConfig";
 import {
   Sidebar,
   SidebarContent,
@@ -63,7 +63,7 @@ const DashboardSidebar = () => {
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
-                      end={item.url === `/${activeRole}`}
+                      end={item.url === rolePathMap[activeRole]}
                       className="hover:bg-accent/50"
                       activeClassName="bg-accent text-primary font-medium"
                       onClick={handleNavClick}

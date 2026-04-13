@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Car, Package, UtensilsCrossed, CreditCard, Clock, MapPin, ArrowRight, Zap } from "lucide-react";
+import { Car, Package, UtensilsCrossed, CreditCard, Clock, MapPin, ArrowRight, Zap, Bus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,6 +84,7 @@ const RiderDashboard = () => {
 
   const quickActions = [
     { title: "Book a Ride", description: "Get picked up now", icon: Car, to: "/rider/book-ride", color: "bg-primary/10 text-primary" },
+    { title: "Buses", description: "Book inter-district bus tickets", icon: Bus, to: "/rider/buses", color: "bg-sky-100 text-sky-700" },
     { title: "Send Parcel", description: "Fast & reliable delivery", icon: Package, to: "/rider/send-parcel", color: "bg-orange-100 text-orange-600" },
     { title: "Order Food", description: "From local restaurants", icon: UtensilsCrossed, to: "/rider/food", color: "bg-green-100 text-green-600" },
   ];

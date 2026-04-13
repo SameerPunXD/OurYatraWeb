@@ -1,1 +1,21 @@
 project_id = "xkmrkdpptrrhaqhteoig"
+
+# These functions are invoked from the browser with the project's publishable key.
+# They validate user/admin authorization inside the function body instead of at the gateway.
+[functions.admin-create-bus-operator]
+verify_jwt = false
+
+[functions.check-auth-email-status]
+verify_jwt = false
+
+[functions.dev-signup-fallback]
+verify_jwt = false
+
+[functions.esewa-initiate-subscription]
+verify_jwt = false
+
+[functions.esewa-verify-subscription]
+verify_jwt = false
+
+[functions.finalize-signup]
+verify_jwt = false

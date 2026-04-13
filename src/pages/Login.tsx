@@ -9,6 +9,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { EMAIL_OTP_DIGIT_LABEL, EMAIL_OTP_LENGTH } from "@/lib/authOtp";
 import { CheckCircle2, Eye, EyeOff, MailCheck, RotateCw } from "lucide-react";
+import { rolePathMap } from "@/components/dashboard/sidebarConfig";
+import type { Database } from "@/integrations/supabase/types";
+
+type AppRole = Database["public"]["Enums"]["app_role"];
 
 const maskEmailAddress = (value: string) => {
   const [local, domain] = value.split("@");
@@ -155,17 +159,10 @@ const Login = () => {
     }
 
     const roleNames = roles.map((roleRow) => roleRow.role);
-    const primaryRole = roleNames.includes("admin") ? "admin" : roleNames[0];
-    const redirectMap: Record<string, string> = {
-      rider: "/rider",
-      driver: "/driver",
-      restaurant: "/restaurant",
-      garage: "/garage",
-      admin: "/admin",
-    };
+    const primaryRole = (roleNames.includes("admin") ? "admin" : roleNames[0]) as AppRole;
     const requestedNext = searchParams.get("next");
     const safeNext = requestedNext && requestedNext.startsWith("/") ? requestedNext : null;
-    navigate(safeNext || redirectMap[primaryRole] || "/");
+    navigate(safeNext || rolePathMap[primaryRole] || "/");
   };
 
   const handleLogin = async (e: React.FormEvent) => {

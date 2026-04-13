@@ -10,6 +10,9 @@ import { Upload, FileText, CheckCircle, Clock, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getVehicleBrands, normalizeVehicleTypeValue, OTHER_BRAND_OPTION, VEHICLE_TYPES } from "@/lib/vehicleBrands";
 
+const riderPartnerVehicleTypes = ["Bike", "Scooter"];
+const driverVehicleTypes = ["Auto", "Car", "Van", "Truck"];
+
 const statusDisplay: Record<string, { label: string; icon: typeof CheckCircle; color: string }> = {
   approved: { label: "Verified", icon: CheckCircle, color: "text-green-600" },
   pending: { label: "Pending Verification", icon: Clock, color: "text-yellow-600" },
@@ -37,6 +40,7 @@ const DriverVehicle = () => {
   const [vehicleBrand, setVehicleBrand] = useState("");
   const [customVehicleBrand, setCustomVehicleBrand] = useState("");
   const [licenseNumber, setLicenseNumber] = useState("");
+  const [allowedVehicleTypes, setAllowedVehicleTypes] = useState<string[]>(driverVehicleTypes);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -48,18 +52,32 @@ const DriverVehicle = () => {
 
   const fetchProfile = async () => {
     if (!user) return;
-    const { data } = await supabase.from("driver_profiles").select("*").eq("id", user.id).maybeSingle();
+    const [profileRes, customRoleRes] = await Promise.all([
+      supabase.from("driver_profiles").select("*").eq("id", user.id).maybeSingle(),
+      supabase.from("user_custom_roles" as any).select("role_slug").eq("user_id", user.id),
+    ]);
+
+    const data = profileRes.data;
     if (data) {
       const normalizedType = normalizeVehicleTypeValue(data.vehicle_type || "Bike");
       const knownBrands = getVehicleBrands(normalizedType);
       const brand = data.vehicle_brand || "";
       const custom = brand && !knownBrands.includes(brand) ? brand : "";
+      const customSlugs = ((customRoleRes.data as any[]) || []).map((row) => row.role_slug);
+      const nextAllowedTypes = customSlugs.includes("auto_driver")
+        ? ["Auto"]
+        : customSlugs.includes("rider_partner") || riderPartnerVehicleTypes.includes(normalizedType)
+          ? riderPartnerVehicleTypes
+          : driverVehicleTypes;
 
       setDriverProfile(data);
+      setAllowedVehicleTypes(nextAllowedTypes);
       setVehicleType(normalizedType);
       setVehicleBrand(custom ? OTHER_BRAND_OPTION : (brand || knownBrands[0] || ""));
       setCustomVehicleBrand(custom);
       setLicenseNumber(data.license_number || "");
+    } else {
+      setAllowedVehicleTypes(driverVehicleTypes);
     }
     setLoading(false);
   };
@@ -67,12 +85,18 @@ const DriverVehicle = () => {
   useEffect(() => { fetchProfile(); }, [user]);
 
   useEffect(() => {
+    if (allowedVehicleTypes.length > 0 && !allowedVehicleTypes.includes(vehicleType)) {
+      setVehicleType(allowedVehicleTypes[0]);
+    }
+  }, [allowedVehicleTypes, vehicleType]);
+
+  useEffect(() => {
     const brands = getVehicleBrands(vehicleType);
     if (!brands.includes(vehicleBrand)) {
       setVehicleBrand(brands[0] || OTHER_BRAND_OPTION);
       setCustomVehicleBrand("");
     }
-  }, [vehicleType]);
+  }, [vehicleType, vehicleBrand]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -127,12 +151,17 @@ const DriverVehicle = () => {
       <Card>
         <CardHeader><CardTitle className="text-lg">Vehicle Information</CardTitle></CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {allowedVehicleTypes.some((type) => riderPartnerVehicleTypes.includes(type))
+              ? "This account is configured for rider services (bike or scooter)."
+              : "This account is configured for driver services (auto, car, van, or truck)."}
+          </p>
           <div className="space-y-2">
             <Label>Vehicle Type</Label>
             <Select value={vehicleType} onValueChange={setVehicleType}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {VEHICLE_TYPES.map((type) => (
+                {VEHICLE_TYPES.filter((type) => allowedVehicleTypes.includes(type)).map((type) => (
                   <SelectItem key={type} value={type}>{type}</SelectItem>
                 ))}
               </SelectContent>

@@ -69,15 +69,30 @@ serve(async (req) => {
     }
 
     if (role === "driver") {
+      const vehicleType = requestedRole === "auto_driver"
+        ? "Auto"
+        : requestedRole === "rider_partner"
+          ? "Bike"
+          : "Car";
+
+      const vehicleBrand = requestedRole === "auto_driver"
+        ? "Bajaj"
+        : requestedRole === "rider_partner"
+          ? "Honda"
+          : "Toyota";
+
       await adminClient.from("driver_profiles").insert({
         id: userId,
-        vehicle_type: requestedRole === "auto_driver" ? "Auto" : "Bike",
-        vehicle_brand: requestedRole === "auto_driver" ? "Bajaj" : "Honda",
+        vehicle_type: vehicleType,
+        vehicle_brand: vehicleBrand,
         availability: "both",
       } as any);
 
-      if (requestedRole === "auto_driver") {
-        await adminClient.from("user_custom_roles").insert({ user_id: userId, role_slug: "auto_driver" } as any);
+      if (requestedRole === "auto_driver" || requestedRole === "rider_partner") {
+        await adminClient.from("user_custom_roles").insert({
+          user_id: userId,
+          role_slug: requestedRole,
+        } as any);
       }
     }
 

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
+import { rolePathMap } from "@/components/dashboard/sidebarConfig";
 
 const navLinks = ["Services", "Drive", "Safety", "Help"];
 
@@ -11,7 +12,7 @@ const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const { user, activeRole } = useAuth();
 
-  const dashboardPath = activeRole ? `/${activeRole}` : "/";
+  const dashboardPath = activeRole ? rolePathMap[activeRole] : "/";
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background border-b border-border">

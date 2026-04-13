@@ -2,7 +2,7 @@ import {
   Home, Car, Package, UtensilsCrossed, CreditCard, User,
   Zap, Truck, DollarSign, ClipboardList, LayoutDashboard,
   Users, Settings, ShoppingBag, Bell, ShieldCheck,
-  Clock, MapPin, Headphones, Star, FileText, History, Wrench,
+  Clock, MapPin, Headphones, Star, FileText, History, Wrench, Bus,
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -14,10 +14,20 @@ export interface SidebarItem {
   icon: typeof Home;
 }
 
+export const rolePathMap: Record<AppRole, string> = {
+  rider: "/rider",
+  driver: "/driver",
+  restaurant: "/restaurant",
+  garage: "/garage",
+  admin: "/admin",
+  bus_operator: "/bus-operator",
+};
+
 export const sidebarConfig: Record<AppRole, SidebarItem[]> = {
   rider: [
     { title: "Home", url: "/rider", icon: Home },
     { title: "Book Ride", url: "/rider/book-ride", icon: Car },
+    { title: "Buses", url: "/rider/buses", icon: Bus },
     { title: "Send Parcel", url: "/rider/send-parcel", icon: Package },
     { title: "My Parcels", url: "/rider/parcels", icon: Truck },
     { title: "Food Order", url: "/rider/food", icon: UtensilsCrossed },
@@ -66,10 +76,20 @@ export const sidebarConfig: Record<AppRole, SidebarItem[]> = {
     { title: "Subscription", url: "/garage/subscription", icon: CreditCard },
     { title: "Profile", url: "/garage/profile", icon: User },
   ],
+  bus_operator: [
+    { title: "Home", url: "/bus-operator", icon: Home },
+    { title: "Manage Buses", url: "/bus-operator/buses", icon: Bus },
+    { title: "Bookings", url: "/bus-operator/bookings", icon: ClipboardList },
+    { title: "Notifications", url: "/bus-operator/notifications", icon: Bell },
+    { title: "Subscription", url: "/bus-operator/subscription", icon: CreditCard },
+    { title: "Profile", url: "/bus-operator/profile", icon: User },
+  ],
   admin: [
     { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
     { title: "Users", url: "/admin/riders", icon: Users },
     { title: "Drivers", url: "/admin/drivers", icon: Car },
+    { title: "Bus Operators", url: "/admin/bus-operators", icon: Bus },
+    { title: "Buses", url: "/admin/buses", icon: ClipboardList },
     { title: "Restaurants", url: "/admin/restaurants", icon: UtensilsCrossed },
     { title: "Garages", url: "/admin/garages", icon: Wrench },
     { title: "Verification", url: "/admin/verification", icon: ShieldCheck },
@@ -90,5 +110,6 @@ export const roleLabelMap: Record<AppRole, string> = {
   driver: "Driver",
   restaurant: "Restaurant Partner",
   garage: "Garage Partner",
+  bus_operator: "Bus Operator",
   admin: "Admin",
 };

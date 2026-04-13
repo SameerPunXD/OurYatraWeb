@@ -30,6 +30,7 @@ import FoodOrderHistory from "./pages/rider/FoodOrderHistory";
 import RiderHistory from "./pages/rider/RiderHistory";
 import SavedAddresses from "./pages/rider/SavedAddresses";
 import SupportPage from "./pages/rider/SupportPage";
+import RiderBuses from "./pages/rider/RiderBuses";
 
 // Driver pages
 import DriverDashboard from "./pages/driver/DriverDashboard";
@@ -60,11 +61,18 @@ import GarageDashboard from "./pages/garage/GarageDashboard";
 import GarageOrders from "./pages/garage/GarageOrders";
 import GarageServices from "./pages/garage/GarageServices";
 
+// Bus operator pages
+import BusOperatorDashboard from "./pages/busOperator/BusOperatorDashboard";
+import BusOperatorBuses from "./pages/busOperator/BusOperatorBuses";
+import BusOperatorBookings from "./pages/busOperator/BusOperatorBookings";
+
 // Admin pages
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminRiders from "./pages/admin/AdminRiders";
 import AdminDrivers from "./pages/admin/AdminDrivers";
+import AdminBusOperators from "./pages/admin/AdminBusOperators";
+import AdminBuses from "./pages/admin/AdminBuses";
 import AdminRestaurants from "./pages/admin/AdminRestaurants";
 import AdminGarages from "./pages/admin/AdminGarages";
 import AdminVerification from "./pages/admin/AdminVerification";
@@ -122,6 +130,7 @@ const App = () => {
             <Route path="/rider" element={<ProtectedRoute requiredRole="rider"><DashboardLayout title="User" /></ProtectedRoute>}>
               <Route index element={<RiderDashboard />} />
               <Route path="book-ride" element={<BookRide />} />
+              <Route path="buses" element={<RiderBuses />} />
               <Route path="parcels" element={<RiderParcels />} />
               <Route path="parcels/:id" element={<ParcelTracking />} />
               <Route path="send-parcel" element={<SendParcel />} />
@@ -182,12 +191,24 @@ const App = () => {
               <Route path="profile" element={<ProfilePage />} />
             </Route>
 
+            {/* Bus operator dashboard */}
+            <Route path="/bus-operator" element={<ProtectedRoute requiredRole="bus_operator"><DashboardLayout title="Bus Operator" /></ProtectedRoute>}>
+              <Route index element={<BusOperatorDashboard />} />
+              <Route path="buses" element={<BusOperatorBuses />} />
+              <Route path="bookings" element={<BusOperatorBookings />} />
+              <Route path="notifications" element={<NotificationCenter />} />
+              <Route path="subscription" element={<SubscriptionPage />} />
+              <Route path="profile" element={<ProfilePage />} />
+            </Route>
+
             {/* Admin dashboard */}
             <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><DashboardLayout title="Admin" /></ProtectedRoute>}>
               <Route index element={<AdminDashboard />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="riders" element={<AdminRiders />} />
               <Route path="drivers" element={<AdminDrivers />} />
+              <Route path="bus-operators" element={<AdminBusOperators />} />
+              <Route path="buses" element={<AdminBuses />} />
               <Route path="restaurants" element={<AdminRestaurants />} />
               <Route path="garages" element={<AdminGarages />} />
               <Route path="verification" element={<AdminVerification />} />

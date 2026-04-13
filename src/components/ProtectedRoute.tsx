@@ -3,6 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSubscriptionCheck } from "@/hooks/useSubscriptionCheck";
 import { supabase } from "@/integrations/supabase/client";
+import { rolePathMap } from "@/components/dashboard/sidebarConfig";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -17,20 +18,31 @@ const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
   const { hasActiveSubscription, loading: subscriptionLoading } = useSubscriptionCheck();
   const location = useLocation();
   const [requireRiderSubscription, setRequireRiderSubscription] = useState(false);
+  const [requireBusOperatorSubscription, setRequireBusOperatorSubscription] = useState(true);
   const [settingsLoading, setSettingsLoading] = useState(true);
 
   useEffect(() => {
     const loadSettings = async () => {
+      setSettingsLoading(true);
       const { data } = await supabase
         .from("app_settings" as any)
-        .select("value_bool")
-        .eq("key", "require_rider_subscription")
-        .maybeSingle();
-      setRequireRiderSubscription(Boolean((data as any)?.value_bool));
+        .select("key, value_bool")
+        .in("key", ["require_rider_subscription", "require_bus_operator_subscription"]);
+
+      const settings = new Map(
+        (((data as any[]) || [])).map((row) => [row.key, Boolean(row.value_bool)]),
+      );
+
+      setRequireRiderSubscription(settings.get("require_rider_subscription") ?? false);
+      setRequireBusOperatorSubscription(settings.get("require_bus_operator_subscription") ?? true);
       setSettingsLoading(false);
     };
+
     loadSettings();
-  }, []);
+
+    window.addEventListener("focus", loadSettings);
+    return () => window.removeEventListener("focus", loadSettings);
+  }, [location.pathname]);
 
   if (loading) {
     return (
@@ -55,13 +67,21 @@ const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
   }
 
   // Driver/restaurant/garage users must have an active subscription.
-  // Rider(User) subscription is controlled by admin setting.
+  // Rider(User) and Bus Operator subscription are controlled by admin settings.
   const shouldEnforceSubscription =
     !!requiredRole &&
     requiredRole !== "admin" &&
-    (requiredRole !== "rider" || requireRiderSubscription);
+    (
+      requiredRole === "rider"
+        ? requireRiderSubscription
+        : requiredRole === "bus_operator"
+          ? requireBusOperatorSubscription
+          : true
+    );
 
   if (shouldEnforceSubscription) {
+    const basePath = rolePathMap[requiredRole];
+
     if (subscriptionLoading || settingsLoading) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background">
@@ -74,15 +94,15 @@ const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
     }
 
     const allowedWithoutSub = new Set([
-      `/${requiredRole}`,
-      `/${requiredRole}/subscription`,
-      `/${requiredRole}/profile`,
-      `/${requiredRole}/notifications`,
-      `/${requiredRole}/support`,
+      basePath,
+      `${basePath}/subscription`,
+      `${basePath}/profile`,
+      `${basePath}/notifications`,
+      `${basePath}/support`,
     ]);
 
     if (!hasActiveSubscription && !allowedWithoutSub.has(location.pathname)) {
-      return <Navigate to={`/${requiredRole}/subscription`} replace />;
+      return <Navigate to={`${basePath}/subscription`} replace />;
     }
   }
 

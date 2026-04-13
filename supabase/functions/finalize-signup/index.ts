@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-type SignupRole = "rider" | "driver" | "auto_driver" | "restaurant" | "garage";
+type SignupRole = "rider" | "rider_partner" | "driver" | "auto_driver" | "restaurant" | "garage";
 
 interface DriverProfilePayload {
   vehicleType: string;
@@ -51,6 +51,17 @@ const normalizeText = (value: string | null | undefined) => {
   return normalized.length > 0 ? normalized : null;
 };
 
+const normalizeVehicleType = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "bike") return "Bike";
+  if (normalized === "scooter") return "Scooter";
+  if (normalized === "auto") return "Auto";
+  if (normalized === "car") return "Car";
+  if (normalized === "van") return "Van";
+  if (normalized === "truck") return "Truck";
+  return value.trim();
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -87,7 +98,7 @@ serve(async (req) => {
       user.user_metadata?.requested_role || user.user_metadata?.role || "rider",
     ) as SignupRole;
     const baseRole = String(
-      user.user_metadata?.role || (requestedRole === "auto_driver" ? "driver" : requestedRole),
+      user.user_metadata?.role || (requestedRole === "auto_driver" || requestedRole === "rider_partner" ? "driver" : requestedRole),
     );
 
     if (!["rider", "driver", "restaurant", "garage"].includes(baseRole)) {
@@ -115,12 +126,19 @@ serve(async (req) => {
       throw profileError;
     }
 
-    if (requestedRole === "auto_driver") {
+    const customRoleSlug =
+      requestedRole === "auto_driver"
+        ? "auto_driver"
+        : requestedRole === "rider_partner"
+          ? "rider_partner"
+          : null;
+
+    if (customRoleSlug) {
       const { data: existingCustomRole, error: customRoleError } = await adminClient
         .from("user_custom_roles" as any)
         .select("user_id")
         .eq("user_id", user.id)
-        .eq("role_slug", "auto_driver")
+        .eq("role_slug", customRoleSlug)
         .limit(1);
 
       if (customRoleError) {
@@ -130,7 +148,7 @@ serve(async (req) => {
       if (!existingCustomRole || existingCustomRole.length === 0) {
         const { error } = await adminClient
           .from("user_custom_roles" as any)
-          .insert({ user_id: user.id, role_slug: "auto_driver" } as any);
+          .insert({ user_id: user.id, role_slug: customRoleSlug } as any);
 
         if (error) {
           throw error;
@@ -144,10 +162,24 @@ serve(async (req) => {
         throw new Error("Driver profile data is required");
       }
 
+      const normalizedVehicleType = normalizeVehicleType(driverProfile.vehicleType);
+
+      if (requestedRole === "rider_partner" && !["Bike", "Scooter"].includes(normalizedVehicleType)) {
+        throw new Error("Rider signup only supports bike or scooter vehicles");
+      }
+
+      if (requestedRole === "driver" && !["Auto", "Car", "Van", "Truck"].includes(normalizedVehicleType)) {
+        throw new Error("Driver signup only supports auto, car, van, or truck vehicles");
+      }
+
+      if (requestedRole === "auto_driver" && normalizedVehicleType !== "Auto") {
+        throw new Error("Auto driver signup only supports auto vehicles");
+      }
+
       const { error } = await adminClient.from("driver_profiles").upsert(
         {
           id: user.id,
-          vehicle_type: driverProfile.vehicleType,
+          vehicle_type: normalizedVehicleType,
           vehicle_brand: driverProfile.vehicleBrand,
           license_number: driverProfile.licenseNumber,
           availability: driverProfile.availability,

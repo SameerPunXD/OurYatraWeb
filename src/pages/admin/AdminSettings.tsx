@@ -157,6 +157,7 @@ const AdminSettings = () => {
     driver: "bg-green-100 text-green-800",
     restaurant: "bg-orange-100 text-orange-800",
     garage: "bg-amber-100 text-amber-800",
+    bus_operator: "bg-cyan-100 text-cyan-800",
     admin: "bg-purple-100 text-purple-800",
   };
 
@@ -199,6 +200,7 @@ const AdminSettings = () => {
               <SelectContent>
                 <SelectItem value="rider">User</SelectItem>
                 <SelectItem value="driver">Driver</SelectItem>
+                <SelectItem value="bus_operator">Bus Operator</SelectItem>
                 <SelectItem value="restaurant">Restaurant</SelectItem>
                 <SelectItem value="garage">Garage</SelectItem>
               </SelectContent>
@@ -249,6 +251,7 @@ const AdminSettings = () => {
                     <SelectContent>
                       <SelectItem value="rider">User</SelectItem>
                       <SelectItem value="driver">Driver</SelectItem>
+                      <SelectItem value="bus_operator">Bus Operator</SelectItem>
                       <SelectItem value="restaurant">Restaurant</SelectItem>
                       <SelectItem value="garage">Garage</SelectItem>
                     </SelectContent>

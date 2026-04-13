@@ -26,20 +26,25 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import { EMAIL_OTP_DIGIT_LABEL, EMAIL_OTP_LENGTH } from "@/lib/authOtp";
 import { getVehicleBrands, OTHER_BRAND_OPTION, VEHICLE_TYPES } from "@/lib/vehicleBrands";
 
-type SignupRole = "rider" | "driver" | "auto_driver" | "restaurant" | "garage";
+type SignupRole = "rider" | "rider_partner" | "driver" | "restaurant" | "garage";
 
 const roleOptions: { value: SignupRole; label: string; description: string; icon: React.ReactNode }[] = [
   { value: "rider", label: "User", description: "Book rides, send parcels, order food", icon: <User className="h-6 w-6" /> },
-  { value: "driver", label: "Driver", description: "Accept rides & deliver parcels (Bike, Scooter, Car, etc.)", icon: <Bike className="h-6 w-6" /> },
-  { value: "auto_driver", label: "Auto Driver", description: "Accept auto-rickshaw ride jobs", icon: <Car className="h-6 w-6" /> },
+  { value: "rider_partner", label: "Rider", description: "Accept bike and scooter ride or parcel requests", icon: <Bike className="h-6 w-6" /> },
+  { value: "driver", label: "Driver", description: "Accept taxi, cab, auto, van, and four-wheeler jobs", icon: <Car className="h-6 w-6" /> },
   { value: "restaurant", label: "Restaurant", description: "List your restaurant & menu", icon: <UtensilsCrossed className="h-6 w-6" /> },
   { value: "garage", label: "Garage", description: "Provide repair and maintenance services", icon: <Wrench className="h-6 w-6" /> },
 ];
 
+const riderPartnerVehicleTypes = ["Bike", "Scooter"] as const;
+const driverVehicleTypes = ["Auto", "Car", "Van", "Truck"] as const;
+
 const TOTAL_STEPS = 4;
 
 const requiresManualApproval = (role: SignupRole) =>
-  role === "driver" || role === "auto_driver" || role === "restaurant" || role === "garage";
+  role === "driver" || role === "rider_partner" || role === "restaurant" || role === "garage";
+
+const isPartnerSignupRole = (role: SignupRole) => role === "driver" || role === "rider_partner";
 
 const normalizeText = (value: string) => {
   const trimmed = value.trim();
@@ -173,16 +178,31 @@ const Signup = () => {
 
   useEffect(() => {
     const roleParam = searchParams.get("role");
-    if (roleParam === "rider" || roleParam === "driver" || roleParam === "auto_driver" || roleParam === "restaurant" || roleParam === "garage") {
+    if (roleParam === "rider" || roleParam === "rider_partner" || roleParam === "driver" || roleParam === "restaurant" || roleParam === "garage") {
       setRole(roleParam);
+      return;
+    }
+
+    if (roleParam === "auto_driver") {
+      setRole("driver");
+      setVehicleType("Auto");
     }
   }, [searchParams]);
 
   useEffect(() => {
-    if (role === "auto_driver") {
-      setVehicleType("Auto");
-      const autoBrands = getVehicleBrands("Auto");
-      setVehicleBrand(autoBrands[0] || OTHER_BRAND_OPTION);
+    if (role === "rider_partner") {
+      setVehicleType((current) => (riderPartnerVehicleTypes.includes(current as (typeof riderPartnerVehicleTypes)[number]) ? current : "Bike"));
+      return;
+    }
+
+    if (role === "driver") {
+      setVehicleType((current) => (driverVehicleTypes.includes(current as (typeof driverVehicleTypes)[number]) ? current : "Car"));
+      return;
+    }
+
+    if (!VEHICLE_TYPES.includes(vehicleType as (typeof VEHICLE_TYPES)[number])) {
+      setVehicleType("Bike");
+      setVehicleBrand(getVehicleBrands("Bike")[0] || OTHER_BRAND_OPTION);
       setCustomVehicleBrand("");
     }
   }, [role]);
@@ -221,7 +241,7 @@ const Signup = () => {
       return payload;
     }
 
-    if (role === "driver" || role === "auto_driver") {
+    if (isPartnerSignupRole(role)) {
       const [nationalIdUrl, vehicleRegistrationUrl, profilePhotoUrl, vehiclePhotoUrl] = await Promise.all([
         nationalId ? uploadFile(nationalId, userId, "national-id") : Promise.resolve(null),
         vehicleRegistration ? uploadFile(vehicleRegistration, userId, "vehicle-reg") : Promise.resolve(null),
@@ -231,10 +251,8 @@ const Signup = () => {
 
       payload.avatarUrl = profilePhotoUrl;
       payload.driverProfile = {
-        vehicleType: role === "auto_driver" ? "Auto" : vehicleType,
-        vehicleBrand: role === "auto_driver"
-          ? (resolvedVehicleBrand || getVehicleBrands("Auto")[0] || "Auto")
-          : resolvedVehicleBrand,
+        vehicleType,
+        vehicleBrand: resolvedVehicleBrand,
         licenseNumber,
         availability,
         nationalIdUrl,
@@ -326,12 +344,10 @@ const Signup = () => {
         return;
       }
 
-      const authRole = role === "auto_driver" ? "driver" : role;
-      const selectedVehicleBrand = role === "auto_driver"
-        ? (resolvedVehicleBrand || getVehicleBrands("Auto")[0] || "Auto")
-        : resolvedVehicleBrand;
+      const authRole = role === "rider_partner" ? "driver" : role;
+      const selectedVehicleBrand = resolvedVehicleBrand;
 
-      if ((role === "driver" || role === "auto_driver") && !selectedVehicleBrand) {
+      if (isPartnerSignupRole(role) && !selectedVehicleBrand) {
         toast({
           title: "Vehicle brand required",
           description: "Please select or enter your vehicle brand.",
@@ -471,7 +487,7 @@ const Signup = () => {
   const canCreateAccount = Boolean(
     !loading &&
     !(
-      (role === "driver" || role === "auto_driver") &&
+      isPartnerSignupRole(role) &&
       (!licenseNumber || !resolvedVehicleBrand)
     ) &&
     !(role === "restaurant" && (!restaurantName || !ownerName || !restaurantAddress)) &&
@@ -593,28 +609,26 @@ const Signup = () => {
               </div>
             )}
 
-            {(role === "driver" || role === "auto_driver") && (
+            {isPartnerSignupRole(role) && (
               <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">We need some documents to verify your driver account.</p>
+                <p className="text-sm text-muted-foreground">
+                  We need some documents to verify your {role === "rider_partner" ? "rider" : "driver"} account.
+                </p>
                 <div className="space-y-2">
                   <Label>Vehicle Type *</Label>
-                  {role === "auto_driver" ? (
-                    <div className="rounded-md border bg-muted px-3 py-2 text-sm">Auto</div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {VEHICLE_TYPES.filter((vehicle) => vehicle !== "Auto").map((vehicle) => (
-                        <Button
-                          key={vehicle}
-                          type="button"
-                          size="sm"
-                          variant={vehicleType === vehicle ? "default" : "outline"}
-                          onClick={() => setVehicleType(vehicle)}
-                        >
-                          {vehicle}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {(role === "rider_partner" ? riderPartnerVehicleTypes : driverVehicleTypes).map((vehicle) => (
+                      <Button
+                        key={vehicle}
+                        type="button"
+                        size="sm"
+                        variant={vehicleType === vehicle ? "default" : "outline"}
+                        onClick={() => setVehicleType(vehicle)}
+                      >
+                        {vehicle}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="vehicle-brand">Vehicle Brand *</Label>
@@ -728,12 +742,6 @@ const Signup = () => {
               <Button className="w-full" onClick={handleSignup} disabled={!canCreateAccount}>
                 {loading ? "Creating account..." : "Create Account"}
               </Button>
-
-              {requiresManualApproval(role) && (
-                <p className="mt-3 text-center text-xs text-muted-foreground">
-                  We&apos;ll email you a verification code first, then your application goes to admin review.
-                </p>
-              )}
             </div>
           </div>
         )}
@@ -749,9 +757,6 @@ const Signup = () => {
                   <h2 className="text-xl font-semibold text-foreground">Verify your email</h2>
                   <p className="text-sm text-muted-foreground">
                     Enter the {EMAIL_OTP_DIGIT_LABEL} verification code sent to <span className="font-medium text-foreground">{maskEmailAddress(email)}</span>.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Keep this page open until your account setup completes.
                   </p>
                 </div>
 
@@ -809,9 +814,6 @@ const Signup = () => {
               </CardContent>
             </Card>
 
-            <p className="text-center text-sm text-muted-foreground">
-              Need to change the email address? Restart signup with the correct email before verifying.
-            </p>
           </div>
         )}
 

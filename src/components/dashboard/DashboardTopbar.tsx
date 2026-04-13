@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
-import { roleLabelMap } from "./sidebarConfig";
+import { roleLabelMap, rolePathMap } from "./sidebarConfig";
 import NotificationDropdown from "./NotificationDropdown";
 
 interface DashboardTopbarProps {
@@ -14,7 +14,7 @@ const DashboardTopbar = ({ title }: DashboardTopbarProps) => {
 
   const handleRoleSwitch = (newRole: string) => {
     setActiveRole(newRole as any);
-    navigate(`/${newRole}`);
+    navigate(rolePathMap[newRole as keyof typeof rolePathMap]);
   };
 
   return (
