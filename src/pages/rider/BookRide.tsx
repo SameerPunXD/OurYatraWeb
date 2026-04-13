@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,27 @@ interface LatLng { lat: number; lng: number; }
 
 type BookingState = "selecting" | "confirming" | "searching" | "active" | "completed";
 
+const metersToLat = (meters: number) => meters / 111320;
+
+const metersToLng = (meters: number, latitude: number) => {
+  const latitudeCos = Math.cos((latitude * Math.PI) / 180);
+  const safeCos = Math.abs(latitudeCos) < 0.0001 ? 0.0001 : latitudeCos;
+  return meters / (111320 * safeCos);
+};
+
+const phantomVehicleOffsets = [
+  { id: "car-1", type: "car" as const, north: 180, east: -140 },
+  { id: "car-2", type: "car" as const, north: -260, east: 190 },
+  { id: "car-3", type: "car" as const, north: 320, east: 220 },
+  { id: "car-4", type: "car" as const, north: -120, east: -260 },
+  { id: "bike-1", type: "bike" as const, north: 90, east: 70 },
+  { id: "bike-2", type: "bike" as const, north: -110, east: 120 },
+  { id: "bike-3", type: "bike" as const, north: 140, east: -40 },
+  { id: "bike-4", type: "bike" as const, north: -180, east: -90 },
+  { id: "bike-5", type: "bike" as const, north: 230, east: -210 },
+  { id: "bike-6", type: "bike" as const, north: -300, east: 60 },
+];
+
 const BookRide = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -29,6 +50,7 @@ const BookRide = () => {
   const [pickupLatLng, setPickupLatLng] = useState<LatLng | null>(null);
   const [dropoffLatLng, setDropoffLatLng] = useState<LatLng | null>(null);
   const [userLocation, setUserLocation] = useState<LatLng | null>(null);
+  const [userLocationRadiusMeters, setUserLocationRadiusMeters] = useState<number | null>(null);
 
   const [booking, setBooking] = useState(false);
   const [activeRide, setActiveRide] = useState<any>(null);
@@ -36,38 +58,53 @@ const BookRide = () => {
 
   // Auto-detect location (GPS first, then IP fallback)
   useEffect(() => {
-    const setInitialPickup = async (loc: LatLng) => {
+    let cancelled = false;
+
+    const setInitialPickup = async (loc: LatLng, radiusMeters: number) => {
+      if (cancelled) {
+        return;
+      }
+
       setUserLocation(loc);
+      setUserLocationRadiusMeters(radiusMeters);
       if (!pickupLatLng) {
         setPickupLatLng(loc);
         setPickupName(await reverseGeocodeLatLng(loc.lat, loc.lng));
       }
     };
 
-    const fallbackToIpLocation = async () => {
-      try {
-        const res = await fetch("https://ipapi.co/json/");
-        const data = await res.json();
-        if (data?.latitude && data?.longitude) {
-          await setInitialPickup({ lat: Number(data.latitude), lng: Number(data.longitude) });
-          toast({ title: "Approximate location used", description: "Enable precise location permission for better accuracy." });
-        }
-      } catch {
-        // ignore fallback errors
-      }
-    };
-
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
-          await setInitialPickup({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          await setInitialPickup(
+            { lat: pos.coords.latitude, lng: pos.coords.longitude },
+            pos.coords.accuracy || 220,
+          );
         },
-        async () => { await fallbackToIpLocation(); },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+        () => {
+          if (cancelled) {
+            return;
+          }
+
+          toast({
+            title: "Exact location unavailable",
+            description: "Enable device location or set the pickup manually on the map.",
+            variant: "destructive",
+          });
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     } else {
-      fallbackToIpLocation();
+      toast({
+        title: "Location not supported",
+        description: "Your browser cannot provide GPS location. Set the pickup manually on the map.",
+        variant: "destructive",
+      });
     }
+
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -177,6 +214,21 @@ const BookRide = () => {
   };
 
   const hasLocations = pickupLatLng && dropoffLatLng;
+  const phantomAnchor = userLocation || pickupLatLng;
+  const phantomVehicles = useMemo(() => {
+    if (!phantomAnchor || state !== "selecting") {
+      return [];
+    }
+
+    return phantomVehicleOffsets.map((offset) => ({
+      id: offset.id,
+      type: offset.type,
+      position: {
+        lat: phantomAnchor.lat + metersToLat(offset.north),
+        lng: phantomAnchor.lng + metersToLng(offset.east, phantomAnchor.lat),
+      },
+    }));
+  }, [phantomAnchor, state]);
 
   return (
     <SubscriptionGate fallbackMessage="Subscribe to book rides on OurYatra.">
@@ -190,6 +242,8 @@ const BookRide = () => {
           onMapClick={handleMapClick}
           selectingFor={selectingFor}
           userLocation={userLocation}
+          userLocationRadiusMeters={userLocationRadiusMeters}
+          phantomVehicles={phantomVehicles}
         />
       </div>
 

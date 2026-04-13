@@ -10,6 +10,11 @@ export interface GooglePlaceSuggestion {
   placeId: string;
 }
 
+interface RoutePathResult {
+  path: LatLngLiteral[];
+  distanceMeters: number;
+}
+
 const GOOGLE_MAPS_API_KEY = String(import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "").trim();
 let optionsConfigured = false;
 
@@ -51,6 +56,22 @@ const ensureRoutesLibrary = async () => {
 };
 
 const pinnedLocationFallback = (lat: number, lng: number) => `Pinned location (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+const getDistanceMeters = (from: LatLngLiteral, to: LatLngLiteral) => {
+  const averageLatitude = (from.lat + to.lat) / 2;
+  const east = (to.lng - from.lng) * 111320 * Math.cos((averageLatitude * Math.PI) / 180);
+  const north = (to.lat - from.lat) * 111320;
+  return Math.sqrt(east * east + north * north);
+};
+
+const getPathDistanceMeters = (path: LatLngLiteral[]) => {
+  let totalDistance = 0;
+
+  for (let index = 1; index < path.length; index += 1) {
+    totalDistance += getDistanceMeters(path[index - 1], path[index]);
+  }
+
+  return totalDistance;
+};
 
 export const hasGoogleMapsApiKey = () => GOOGLE_MAPS_API_KEY.length > 0;
 
@@ -190,7 +211,12 @@ export const autocompletePlaces = async (query: string, proximity?: LatLngLitera
   }));
 };
 
-export const getDrivingRoutePath = async (origin: LatLngLiteral, destination: LatLngLiteral) => {
+const requestRoutePath = async (
+  origin: LatLngLiteral,
+  destination: LatLngLiteral,
+  travelMode: google.maps.TravelMode,
+  provideRouteAlternatives = false,
+) => {
   if (!hasGoogleMapsApiKey()) {
     return null;
   }
@@ -204,7 +230,8 @@ export const getDrivingRoutePath = async (origin: LatLngLiteral, destination: La
         {
           origin,
           destination,
-          travelMode: googleMaps.maps.TravelMode.DRIVING,
+          travelMode,
+          provideRouteAlternatives,
         },
         (result, status) => {
           if (status === googleMaps.maps.DirectionsStatus.OK && result) {
@@ -217,14 +244,82 @@ export const getDrivingRoutePath = async (origin: LatLngLiteral, destination: La
       );
     });
 
-    const overviewPath = response.routes?.[0]?.overview_path || [];
-    return overviewPath.map((point) => ({
-      lat: point.lat(),
-      lng: point.lng(),
-    }));
+    const bestRoute = (response.routes || [])
+      .map((route) => {
+        const path = (route.overview_path || []).map((point) => ({
+          lat: point.lat(),
+          lng: point.lng(),
+        }));
+
+        if (path.length < 2) {
+          return null;
+        }
+
+        const legDistanceMeters = (route.legs || []).reduce(
+          (totalDistance, leg) => totalDistance + (leg.distance?.value || 0),
+          0,
+        );
+
+        return {
+          path,
+          distanceMeters: legDistanceMeters || getPathDistanceMeters(path),
+        } satisfies RoutePathResult;
+      })
+      .filter((route): route is RoutePathResult => Boolean(route))
+      .sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
+
+    return bestRoute || null;
   } catch {
     return null;
   }
+};
+
+export const getDrivingRoutePath = async (origin: LatLngLiteral, destination: LatLngLiteral) => {
+  const route = await requestRoutePath(
+    origin,
+    destination,
+    google.maps.TravelMode.DRIVING,
+    true,
+  );
+
+  return route?.path || null;
+};
+
+export const getPreviewRoutePath = async (origin: LatLngLiteral, destination: LatLngLiteral) => {
+  const directDistanceMeters = getDistanceMeters(origin, destination);
+  const drivingRoute = await requestRoutePath(
+    origin,
+    destination,
+    google.maps.TravelMode.DRIVING,
+    true,
+  );
+
+  if (!drivingRoute) {
+    return null;
+  }
+
+  const shouldTryWalkingFallback = (
+    directDistanceMeters > 120 &&
+    directDistanceMeters < 3200 &&
+    drivingRoute.distanceMeters > directDistanceMeters * 1.85
+  );
+
+  if (!shouldTryWalkingFallback) {
+    return drivingRoute.path;
+  }
+
+  const walkingRoute = await requestRoutePath(
+    origin,
+    destination,
+    google.maps.TravelMode.WALKING,
+    true,
+  );
+
+  if (walkingRoute && walkingRoute.distanceMeters < drivingRoute.distanceMeters * 0.82) {
+    return walkingRoute.path;
+  }
+
+  return drivingRoute.path;
 };
 
 export const buildGoogleStaticMapUrl = (driver?: LatLngLiteral | null, mechanic?: LatLngLiteral | null) => {

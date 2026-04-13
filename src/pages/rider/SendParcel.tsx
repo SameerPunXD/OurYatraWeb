@@ -42,6 +42,7 @@ const SendParcel = () => {
   const [dropoff, setDropoff] = useState<LatLng | null>(null);
   const [selectingFor, setSelectingFor] = useState<"pickup" | "dropoff" | null>(null);
   const [userLocation, setUserLocation] = useState<LatLng | null>(null);
+  const [userLocationRadiusMeters, setUserLocationRadiusMeters] = useState<number | null>(null);
   const [packageType, setPackageType] = useState("small_parcel");
   const [recipientName, setRecipientName] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
@@ -49,8 +50,15 @@ const SendParcel = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const setInitialPickup = async (current: LatLng) => {
+    let cancelled = false;
+
+    const setInitialPickup = async (current: LatLng, radiusMeters: number) => {
+      if (cancelled) {
+        return;
+      }
+
       setUserLocation(current);
+      setUserLocationRadiusMeters(radiusMeters);
       if (!pickup) {
         setPickup(current);
         const name = await reverseGeocodeLatLng(current.lat, current.lng);
@@ -58,30 +66,38 @@ const SendParcel = () => {
       }
     };
 
-    const fallbackToIpLocation = async () => {
-      try {
-        const res = await fetch("https://ipapi.co/json/");
-        const data = await res.json();
-        if (data?.latitude && data?.longitude) {
-          await setInitialPickup({ lat: Number(data.latitude), lng: Number(data.longitude) });
-          toast({ title: "Approximate location used", description: "Enable precise location permission for better accuracy." });
-        }
-      } catch {
-        // ignore fallback errors
-      }
-    };
-
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
-          await setInitialPickup({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          await setInitialPickup(
+            { lat: pos.coords.latitude, lng: pos.coords.longitude },
+            pos.coords.accuracy || 220,
+          );
         },
-        async () => { await fallbackToIpLocation(); },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+        () => {
+          if (cancelled) {
+            return;
+          }
+
+          toast({
+            title: "Exact location unavailable",
+            description: "Enable device location or pin the pickup manually on the map.",
+            variant: "destructive",
+          });
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     } else {
-      fallbackToIpLocation();
+      toast({
+        title: "Location not supported",
+        description: "Your browser cannot provide GPS location. Pin the pickup manually on the map.",
+        variant: "destructive",
+      });
     }
+
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -150,6 +166,7 @@ const SendParcel = () => {
           onMapClick={handleMapClick}
           selectingFor={selectingFor}
           userLocation={userLocation}
+          userLocationRadiusMeters={userLocationRadiusMeters}
         />
       </div>
 

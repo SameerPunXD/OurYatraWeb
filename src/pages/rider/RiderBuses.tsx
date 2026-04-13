@@ -4,12 +4,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import SubscriptionGate from "@/components/SubscriptionGate";
+import BusSeatPicker from "@/components/buses/BusSeatPicker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { sortBusSeatLabels } from "@/lib/busSeats";
 import { NEPAL_DISTRICTS } from "@/lib/nepalDistricts";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -29,7 +32,10 @@ const RiderBuses = () => {
   const [loading, setLoading] = useState(false);
   const [searchTouched, setSearchTouched] = useState(false);
   const [bookingBusId, setBookingBusId] = useState<string | null>(null);
-  const [seatSelections, setSeatSelections] = useState<Record<string, number>>({});
+  const [bookingDialogBusId, setBookingDialogBusId] = useState<string | null>(null);
+  const [selectedSeatNumbers, setSelectedSeatNumbers] = useState<Record<string, string[]>>({});
+  const [reservedSeatNumbers, setReservedSeatNumbers] = useState<Record<string, string[]>>({});
+  const [reservedSeatsLoadingBusId, setReservedSeatsLoadingBusId] = useState<string | null>(null);
   const [passengerForms, setPassengerForms] = useState<Record<string, { name: string; phone: string }>>({});
 
   const canSearch = Boolean(fromDistrict && toDistrict && travelDate && fromDistrict !== toDistrict);
@@ -37,6 +43,10 @@ const RiderBuses = () => {
   const sortedBookings = useMemo(
     () => [...bookings].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [bookings],
+  );
+  const activeBookingBus = useMemo(
+    () => buses.find((bus) => bus.id === bookingDialogBusId) || null,
+    [buses, bookingDialogBusId],
   );
 
   const ensurePassengerDefaults = (busId: string) => {
@@ -50,7 +60,35 @@ const RiderBuses = () => {
         },
       };
     });
-    setSeatSelections((current) => ({ ...current, [busId]: current[busId] || 1 }));
+    setSelectedSeatNumbers((current) => ({ ...current, [busId]: current[busId] || [] }));
+  };
+
+  const fetchReservedSeats = async (busId: string, force = false) => {
+    if (!force && reservedSeatNumbers[busId]) {
+      return reservedSeatNumbers[busId];
+    }
+
+    setReservedSeatsLoadingBusId(busId);
+    const { data, error } = await supabase.rpc("get_bus_reserved_seats", { _bus_id: busId });
+    setReservedSeatsLoadingBusId((current) => (current === busId ? null : current));
+
+    if (error) {
+      toast({
+        title: "Could not load seat map",
+        description: error.message,
+        variant: "destructive",
+      });
+      return [];
+    }
+
+    const normalizedSeats = sortBusSeatLabels(data || []);
+    setReservedSeatNumbers((current) => ({ ...current, [busId]: normalizedSeats }));
+    setSelectedSeatNumbers((current) => ({
+      ...current,
+      [busId]: (current[busId] || []).filter((seatNumber) => !normalizedSeats.includes(seatNumber)),
+    }));
+
+    return normalizedSeats;
   };
 
   const fetchBookings = async () => {
@@ -58,7 +96,7 @@ const RiderBuses = () => {
     const { data, error } = await supabase
       .from("bus_bookings")
       .select(
-        "id, bus_id, seats_booked, total_amount, passenger_name, passenger_phone, status, created_at, buses(id, bus_name, bus_number, from_district, to_district, departure_date, departure_time, status, notes)",
+        "id, bus_id, seat_numbers, seats_booked, total_amount, passenger_name, passenger_phone, status, created_at, buses(id, bus_name, bus_number, from_district, to_district, departure_date, departure_time, status, notes)",
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
@@ -109,10 +147,48 @@ const RiderBuses = () => {
     setLoading(false);
   };
 
+  const openBookingDialog = (bus: BusRow) => {
+    ensurePassengerDefaults(bus.id);
+    setBookingDialogBusId(bus.id);
+    void fetchReservedSeats(bus.id, true);
+  };
+
+  const toggleSeatSelection = (bus: BusRow, seatNumber: string) => {
+    const reservedSeats = reservedSeatNumbers[bus.id] || [];
+    if (reservedSeats.includes(seatNumber)) {
+      return;
+    }
+
+    setSelectedSeatNumbers((current) => {
+      const currentSeats = current[bus.id] || [];
+      if (currentSeats.includes(seatNumber)) {
+        return {
+          ...current,
+          [bus.id]: currentSeats.filter((existingSeat) => existingSeat !== seatNumber),
+        };
+      }
+
+      if (currentSeats.length >= bus.available_seats) {
+        toast({
+          title: "Seat limit reached",
+          description: `Only ${bus.available_seats} seats are available on this bus.`,
+          variant: "destructive",
+        });
+        return current;
+      }
+
+      return {
+        ...current,
+        [bus.id]: sortBusSeatLabels([...currentSeats, seatNumber]),
+      };
+    });
+  };
+
   const handleBook = async (bus: BusRow) => {
     if (!user) return;
 
-    const seats = seatSelections[bus.id] || 1;
+    const seatNumbers = sortBusSeatLabels(selectedSeatNumbers[bus.id] || []);
+    const seats = seatNumbers.length;
     const passengerForm = passengerForms[bus.id] || {
       name: profile?.full_name || "",
       phone: profile?.phone || "",
@@ -129,8 +205,20 @@ const RiderBuses = () => {
 
     if (seats < 1 || seats > bus.available_seats) {
       toast({
-        title: "Invalid seat count",
-        description: `Choose between 1 and ${bus.available_seats} seats.`,
+        title: "Select seats",
+        description: `Choose between 1 and ${bus.available_seats} seats from the bus diagram.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const latestReservedSeats = await fetchReservedSeats(bus.id, true);
+    const conflictingSeat = seatNumbers.find((seatNumber) => latestReservedSeats.includes(seatNumber));
+
+    if (conflictingSeat) {
+      toast({
+        title: "Seat no longer available",
+        description: `Seat ${conflictingSeat} was just booked by someone else. Please choose another seat.`,
         variant: "destructive",
       });
       return;
@@ -141,6 +229,7 @@ const RiderBuses = () => {
     const { error } = await supabase.from("bus_bookings").insert({
       bus_id: bus.id,
       user_id: user.id,
+      seat_numbers: seatNumbers,
       seats_booked: seats,
       total_amount: Number(bus.price) * seats,
       passenger_name: passengerForm.name.trim(),
@@ -160,14 +249,17 @@ const RiderBuses = () => {
 
     toast({
       title: "Bus booked",
-      description: `Your ${seats} seat booking for ${bus.bus_name} is confirmed.`,
+      description: `Seats ${seatNumbers.join(", ")} on ${bus.bus_name} are confirmed.`,
     });
 
+    setSelectedSeatNumbers((current) => ({ ...current, [bus.id]: [] }));
+    setBookingDialogBusId(null);
     await Promise.all([searchBuses(), fetchBookings()]);
     setBookingBusId(null);
   };
 
   const handleCancelBooking = async (bookingId: string) => {
+    const booking = bookings.find((item) => item.id === bookingId);
     const { error } = await supabase
       .from("bus_bookings")
       .update({ status: "cancelled" })
@@ -187,7 +279,11 @@ const RiderBuses = () => {
       description: "Your bus booking has been cancelled.",
     });
 
-    await Promise.all([fetchBookings(), canSearch ? searchBuses() : Promise.resolve()]);
+    await Promise.all([
+      fetchBookings(),
+      canSearch ? searchBuses() : Promise.resolve(),
+      booking?.bus_id ? fetchReservedSeats(booking.bus_id, true) : Promise.resolve([]),
+    ]);
   };
 
   return (
@@ -265,7 +361,8 @@ const RiderBuses = () => {
               buses.map((bus) => {
                 const amenities = bus.amenities || [];
                 const form = passengerForms[bus.id] || { name: profile?.full_name || "", phone: profile?.phone || "" };
-                const seats = seatSelections[bus.id] || 1;
+                const selectedSeats = sortBusSeatLabels(selectedSeatNumbers[bus.id] || []);
+                const seats = selectedSeats.length;
 
                 return (
                   <Card key={bus.id} className="border-primary/10">
@@ -347,27 +444,24 @@ const RiderBuses = () => {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label>Seats</Label>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={bus.available_seats}
-                            value={seats}
-                            onChange={(event) =>
-                              setSeatSelections((current) => ({
-                                ...current,
-                                [bus.id]: Number(event.target.value) || 1,
-                              }))
-                            }
-                          />
+                          <Label>Selected Seats</Label>
+                          <div className="flex min-h-10 items-center rounded-md border border-input bg-muted/20 px-3 text-sm text-foreground">
+                            {selectedSeats.length > 0 ? selectedSeats.join(", ") : "No seats selected yet"}
+                          </div>
                         </div>
                       </div>
 
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-sm text-muted-foreground">
-                          Total: <span className="font-semibold text-foreground">Rs {Number(bus.price) * seats}</span>
+                          {selectedSeats.length > 0 ? (
+                            <>
+                              Total: <span className="font-semibold text-foreground">Rs {Number(bus.price) * seats}</span>
+                            </>
+                          ) : (
+                            "Choose seats to see the total fare."
+                          )}
                         </p>
-                        <Button onClick={() => handleBook(bus)} disabled={bookingBusId === bus.id}>
+                        <Button onClick={() => openBookingDialog(bus)} disabled={bookingBusId === bus.id}>
                           {bookingBusId === bus.id ? "Booking..." : "Book this bus"}
                         </Button>
                       </div>
@@ -412,6 +506,11 @@ const RiderBuses = () => {
                       <p className="text-sm text-muted-foreground">
                         Seats: {booking.seats_booked} • Total: Rs {Number(booking.total_amount)}
                       </p>
+                      {Array.isArray(booking.seat_numbers) && booking.seat_numbers.length > 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Seat numbers: {sortBusSeatLabels(booking.seat_numbers).join(", ")}
+                        </p>
+                      )}
                       {booking.buses?.notes && (
                         <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
                           <span className="font-medium">Boarding / arrival notes:</span> {booking.buses.notes}
@@ -433,6 +532,113 @@ const RiderBuses = () => {
             )}
           </CardContent>
         </Card>
+
+        <Dialog open={Boolean(activeBookingBus)} onOpenChange={(open) => !open && setBookingDialogBusId(null)}>
+          {activeBookingBus && (
+            <DialogContent className="max-h-[94vh] max-w-4xl overflow-y-auto p-5 sm:p-6">
+              <DialogHeader>
+                <DialogTitle>
+                  Choose seats for {activeBookingBus.bus_name} ({activeBookingBus.bus_number})
+                </DialogTitle>
+                <DialogDescription>
+                  {activeBookingBus.from_district} to {activeBookingBus.to_district} on{" "}
+                  {new Date(activeBookingBus.departure_date).toLocaleDateString()} at {formatTime(activeBookingBus.departure_time)}.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5">
+                <BusSeatPicker
+                  totalSeats={activeBookingBus.total_seats}
+                  reservedSeats={reservedSeatNumbers[activeBookingBus.id] || []}
+                  selectedSeats={selectedSeatNumbers[activeBookingBus.id] || []}
+                  onToggleSeat={(seatNumber) => toggleSeatSelection(activeBookingBus, seatNumber)}
+                  disabled={reservedSeatsLoadingBusId === activeBookingBus.id || bookingBusId === activeBookingBus.id}
+                />
+
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Seat Summary</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Available seats: {activeBookingBus.available_seats} of {activeBookingBus.total_seats}
+                    </p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Selected seats:
+                    </p>
+                    <p className="text-base font-semibold text-foreground">
+                      {(selectedSeatNumbers[activeBookingBus.id] || []).length > 0
+                        ? sortBusSeatLabels(selectedSeatNumbers[activeBookingBus.id] || []).join(", ")
+                        : "No seats selected"}
+                    </p>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      Total fare:
+                    </p>
+                    <p className="text-2xl font-bold text-primary">
+                      Rs {Number(activeBookingBus.price) * (selectedSeatNumbers[activeBookingBus.id] || []).length}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Passenger Name</Label>
+                      <Input
+                        value={passengerForms[activeBookingBus.id]?.name || ""}
+                        onChange={(event) =>
+                          setPassengerForms((current) => ({
+                            ...current,
+                            [activeBookingBus.id]: {
+                              name: event.target.value,
+                              phone: current[activeBookingBus.id]?.phone || profile?.phone || "",
+                            },
+                          }))
+                        }
+                        placeholder="Passenger full name"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Passenger Phone</Label>
+                      <Input
+                        value={passengerForms[activeBookingBus.id]?.phone || ""}
+                        onChange={(event) =>
+                          setPassengerForms((current) => ({
+                            ...current,
+                            [activeBookingBus.id]: {
+                              name: current[activeBookingBus.id]?.name || profile?.full_name || "",
+                              phone: event.target.value,
+                            },
+                          }))
+                        }
+                        placeholder="98XXXXXXXX"
+                      />
+                    </div>
+
+                    {activeBookingBus.notes && (
+                      <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
+                        <span className="font-medium">Boarding / arrival notes:</span> {activeBookingBus.notes}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+                    <Button variant="outline" onClick={() => setBookingDialogBusId(null)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => handleBook(activeBookingBus)}
+                      disabled={bookingBusId === activeBookingBus.id || reservedSeatsLoadingBusId === activeBookingBus.id}
+                    >
+                      {bookingBusId === activeBookingBus.id
+                        ? "Booking..."
+                        : reservedSeatsLoadingBusId === activeBookingBus.id
+                          ? "Loading seats..."
+                          : "Confirm booking"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </DialogContent>
+          )}
+        </Dialog>
       </div>
     </SubscriptionGate>
   );

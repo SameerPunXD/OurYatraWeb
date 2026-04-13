@@ -33,6 +33,7 @@ const FoodCheckout = () => {
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
   const [ordering, setOrdering] = useState(false);
   const [userLocation, setUserLocation] = useState<LatLng | null>(null);
+  const [userLocationRadiusMeters, setUserLocationRadiusMeters] = useState<number | null>(null);
   const [deliveryLatLng, setDeliveryLatLng] = useState<LatLng | null>(null);
   const [selectingFor, setSelectingFor] = useState<"pickup" | "dropoff" | null>(null);
 
@@ -42,37 +43,47 @@ const FoodCheckout = () => {
   }, [user]);
 
   useEffect(() => {
-    const fallbackToIpLocation = async () => {
-      try {
-        const res = await fetch("https://ipapi.co/json/");
-        const data = await res.json();
-        if (data?.latitude && data?.longitude) {
-          const loc = { lat: Number(data.latitude), lng: Number(data.longitude) };
-          setUserLocation(loc);
-          if (!deliveryLatLng && !address.trim()) {
-            setDeliveryLatLng(loc);
-            setAddress(await reverseGeocodeLatLng(loc.lat, loc.lng));
-          }
-        }
-      } catch {}
-    };
+    let cancelled = false;
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
+          if (cancelled) {
+            return;
+          }
+
           const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setUserLocation(loc);
+          setUserLocationRadiusMeters(pos.coords.accuracy || 220);
           if (!deliveryLatLng && !address.trim()) {
             setDeliveryLatLng(loc);
             setAddress(await reverseGeocodeLatLng(loc.lat, loc.lng));
           }
         },
-        async () => { await fallbackToIpLocation(); },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+        () => {
+          if (cancelled) {
+            return;
+          }
+
+          toast({
+            title: "Exact location unavailable",
+            description: "Enable device location or set the delivery point manually on the map.",
+            variant: "destructive",
+          });
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     } else {
-      fallbackToIpLocation();
+      toast({
+        title: "Location not supported",
+        description: "Your browser cannot provide GPS location. Set the delivery point manually on the map.",
+        variant: "destructive",
+      });
     }
+
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -190,6 +201,7 @@ const FoodCheckout = () => {
               onMapClick={handleMapClick}
               selectingFor={selectingFor}
               userLocation={userLocation}
+              userLocationRadiusMeters={userLocationRadiusMeters}
             />
           </div>
         </CardContent>
