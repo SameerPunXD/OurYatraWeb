@@ -1,0 +1,36 @@
+OurYatra Example Accounts (NEW Supabase Project)
+Project Ref: xkmrkdpptrrhaqhteoig
+Supabase URL: https://xkmrkdpptrrhaqhteoig.supabase.co
+
+NOTE:
+- These are sample credentials for quick testing setup.
+- Create these users from app signup (or admin seed) and assign roles in user_roles.
+
+Admin
+- Email: admin@ouryatra.app
+- Password: Admin@12345
+- Role: admin
+
+Rider
+- Email: rider1@ouryatra.app
+- Password: Rider@12345
+- Role: rider
+
+Driver
+- Email: driver1@ouryatra.app
+- Password: Driver@12345
+- Role: driver
+
+Restaurant
+- Email: restaurant1@ouryatra.app
+- Password: Restaurant@12345
+- Role: restaurant
+
+Garage
+- Email: garage1@ouryatra.app
+- Password: Garage@12345
+- Role: garage
+
+Admin role toggle note:
+- Yes, admin can toggle into other roles IF the same admin user has multiple role rows in user_roles.
+- Example for admin user_id: add rider/driver/restaurant/garage roles in user_roles for that same user.

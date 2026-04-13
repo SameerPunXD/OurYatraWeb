@@ -1,0 +1,2 @@
+ALTER TABLE public.driver_profiles ADD COLUMN IF NOT EXISTS is_online boolean NOT NULL DEFAULT false;
+ALTER TABLE public.driver_profiles ADD COLUMN IF NOT EXISTS service_mode text NOT NULL DEFAULT 'both';

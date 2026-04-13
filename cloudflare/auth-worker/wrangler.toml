@@ -1,0 +1,8 @@
+name = "ouryatra-auth-relay"
+main = "src/index.ts"
+compatibility_date = "2026-03-20"
+
+[vars]
+APP_URL = "https://ouryatra.netlify.app"
+SUPABASE_URL = "https://xkmrkdpptrrhaqhteoig.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_ef-52evBdKUEMq8irQrciw_96HDqhY3"

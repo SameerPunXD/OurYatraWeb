@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUBSCRIPTION_QR_URL: ${{ vars.VITE_SUBSCRIPTION_QR_URL }}
+          VITE_SUBSCRIPTION_ACCOUNT_NAME: ${{ vars.VITE_SUBSCRIPTION_ACCOUNT_NAME }}
+          VITE_SUBSCRIPTION_ACCOUNT_PHONE: ${{ vars.VITE_SUBSCRIPTION_ACCOUNT_PHONE }}
+          VITE_SUBSCRIPTION_PAYMENT_NOTE: ${{ vars.VITE_SUBSCRIPTION_PAYMENT_NOTE }}
+          VITE_MAPBOX_PUBLIC_TOKEN: ${{ vars.VITE_MAPBOX_PUBLIC_TOKEN }}
+          VITE_LOCATIONIQ_API_KEY: ${{ vars.VITE_LOCATIONIQ_API_KEY }}
+          VITE_SIGNUP_REDIRECT_URL: ${{ vars.VITE_SIGNUP_REDIRECT_URL }}
+          VITE_PASSWORD_RESET_REDIRECT_URL: ${{ vars.VITE_PASSWORD_RESET_REDIRECT_URL }}
+        run: npm run build
+
+      - name: Add SPA fallback
+        run: cp dist/index.html dist/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
