@@ -7,19 +7,16 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import CallButton from "@/components/CallButton";
 import ChatPanel from "@/components/ChatPanel";
+import { buildGoogleStaticMapUrl } from "@/lib/googleMaps";
 
 const ORDER_STEPS = ["pending", "confirmed", "in_progress", "completed"];
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_PUBLIC_TOKEN;
 
 const mapPreviewUrl = (driverLng?: number, driverLat?: number, mechLng?: number, mechLat?: number) => {
-  if (!MAPBOX_TOKEN || driverLng == null || driverLat == null) return "";
-  const pins = [
-    `pin-s-car+ef4444(${driverLng},${driverLat})`,
-    mechLng != null && mechLat != null ? `pin-s-garage+2563eb(${mechLng},${mechLat})` : null,
-  ].filter(Boolean).join(",");
-  const centerLng = mechLng != null ? (driverLng + mechLng) / 2 : driverLng;
-  const centerLat = mechLat != null ? (driverLat + mechLat) / 2 : driverLat;
-  return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/${pins}/${centerLng},${centerLat},13/700x280?access_token=${MAPBOX_TOKEN}`;
+  if (driverLng == null || driverLat == null) return "";
+  return buildGoogleStaticMapUrl(
+    { lat: driverLat, lng: driverLng },
+    mechLng != null && mechLat != null ? { lat: mechLat, lng: mechLng } : null,
+  );
 };
 
 const GarageOrders = () => {
@@ -108,6 +105,7 @@ const GarageOrders = () => {
       <h2 className="text-2xl font-bold">Garage Orders (Realtime)</h2>
       {orders.map((o) => {
         const driver = drivers[o.driver_id];
+        const previewUrl = mapPreviewUrl(o.driver_lng, o.driver_lat, o.mechanic_lng, o.mechanic_lat);
         return (
           <Card key={o.id}>
             <CardContent className="p-4 space-y-2">
@@ -115,9 +113,9 @@ const GarageOrders = () => {
               <p className="text-sm">Driver location: {o.driver_address || "Not provided"}</p>
               <p className="text-xs text-muted-foreground">Driver: {driver?.full_name || "Unknown"} • {driver?.phone || "No phone"}</p>
               {o.location_accuracy === "approximate" && <p className="text-xs text-amber-700">Approximate location used (address-based)</p>}
-              {o.status !== "completed" && o.driver_lat && o.driver_lng && (
+              {o.status !== "completed" && o.driver_lat && o.driver_lng && previewUrl && (
                 <>
-                  <img src={mapPreviewUrl(o.driver_lng, o.driver_lat, o.mechanic_lng, o.mechanic_lat)} alt="Order map" className="w-full rounded-md border" />
+                  <img src={previewUrl} alt="Order map" className="w-full rounded-md border" />
                   <a className="text-xs text-primary underline block" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${o.driver_lat},${o.driver_lng}`}>
                     Navigate to driver
                   </a>

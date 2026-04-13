@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import SubscriptionGate from "@/components/SubscriptionGate";
 import RideMap from "@/components/ride/RideMap";
 import LocationSearch from "@/components/ride/LocationSearch";
+import { reverseGeocodeLatLng } from "@/lib/googleMaps";
 
 const DELIVERY_FEE = 50;
 
@@ -35,32 +36,6 @@ const FoodCheckout = () => {
   const [deliveryLatLng, setDeliveryLatLng] = useState<LatLng | null>(null);
   const [selectingFor, setSelectingFor] = useState<"pickup" | "dropoff" | null>(null);
 
-  const reverseGeocode = async (lat: number, lng: number) => {
-    const locationIqKey = import.meta.env.VITE_LOCATIONIQ_API_KEY;
-    const mapboxToken = import.meta.env.VITE_MAPBOX_PUBLIC_TOKEN;
-    const pinnedFallback = `Pinned location (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
-
-    try {
-      if (locationIqKey) {
-        const liqRes = await fetch(`https://us1.locationiq.com/v1/reverse?key=${locationIqKey}&lat=${lat}&lon=${lng}&format=json`);
-        if (liqRes.ok) {
-          const liq = await liqRes.json();
-          if (liq?.display_name) return liq.display_name;
-        }
-      }
-      if (mapboxToken) {
-        const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${mapboxToken}&language=en&types=address,poi,place,locality,neighborhood`);
-        if (res.ok) {
-          const data = await res.json();
-          return data?.features?.[0]?.place_name || pinnedFallback;
-        }
-      }
-      return pinnedFallback;
-    } catch {
-      return pinnedFallback;
-    }
-  };
-
   useEffect(() => {
     if (!user) return;
     supabase.from("saved_addresses").select("*").eq("user_id", user.id).then(({ data }) => setSavedAddresses(data || []));
@@ -76,7 +51,7 @@ const FoodCheckout = () => {
           setUserLocation(loc);
           if (!deliveryLatLng && !address.trim()) {
             setDeliveryLatLng(loc);
-            setAddress(await reverseGeocode(loc.lat, loc.lng));
+            setAddress(await reverseGeocodeLatLng(loc.lat, loc.lng));
           }
         }
       } catch {}
@@ -89,7 +64,7 @@ const FoodCheckout = () => {
           setUserLocation(loc);
           if (!deliveryLatLng && !address.trim()) {
             setDeliveryLatLng(loc);
-            setAddress(await reverseGeocode(loc.lat, loc.lng));
+            setAddress(await reverseGeocodeLatLng(loc.lat, loc.lng));
           }
         },
         async () => { await fallbackToIpLocation(); },
@@ -104,7 +79,7 @@ const FoodCheckout = () => {
   const handleMapClick = async (latlng: LatLng) => {
     if (selectingFor === "pickup") {
       setDeliveryLatLng(latlng);
-      setAddress(await reverseGeocode(latlng.lat, latlng.lng));
+      setAddress(await reverseGeocodeLatLng(latlng.lat, latlng.lng));
       setSelectingFor(null);
     }
   };

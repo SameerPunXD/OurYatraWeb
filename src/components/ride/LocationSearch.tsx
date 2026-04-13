@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { MapPin, Search, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { autocompletePlaces, geocodePlaceId } from "@/lib/googleMaps";
 
 interface LatLng {
   lat: number;
@@ -9,14 +10,8 @@ interface LatLng {
 }
 
 interface SearchResult {
-  place_name: string;
-  center: [number, number];
-}
-
-interface LocationIqResult {
-  display_name: string;
-  lat: string;
-  lon: string;
+  description: string;
+  placeId: string;
 }
 
 interface LocationSearchProps {
@@ -52,50 +47,12 @@ const LocationSearch = ({ label, placeholder, value, onSelect, onClear, onFocusS
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (q.length < 3) { setResults([]); setOpen(false); return; }
 
-    const token = import.meta.env.VITE_MAPBOX_PUBLIC_TOKEN;
-    const locationIqKey = import.meta.env.VITE_LOCATIONIQ_API_KEY;
-
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        // 1) Try LocationIQ autocomplete first
-        if (locationIqKey) {
-          const viewbox = proximity
-            ? `&viewbox=${proximity.lng - 0.2},${proximity.lat + 0.2},${proximity.lng + 0.2},${proximity.lat - 0.2}&bounded=0`
-            : "";
-          const liqRes = await fetch(
-            `https://us1.locationiq.com/v1/autocomplete?key=${locationIqKey}&q=${encodeURIComponent(q)}&limit=8&dedupe=1&countrycodes=np${viewbox}&format=json`
-          );
-
-          if (liqRes.ok) {
-            const liqData: LocationIqResult[] = await liqRes.json();
-            const mapped: SearchResult[] = (liqData || []).map((r) => ({
-              place_name: r.display_name,
-              center: [Number(r.lon), Number(r.lat)],
-            }));
-            if (mapped.length > 0) {
-              setResults(mapped);
-              setOpen(true);
-              setLoading(false);
-              return;
-            }
-          }
-        }
-
-        // 2) Fallback to Mapbox if LocationIQ has no results
-        if (token) {
-          const proximityParam = proximity ? `&proximity=${proximity.lng},${proximity.lat}` : "";
-          const res = await fetch(
-            `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${token}&autocomplete=true&limit=8&country=np${proximityParam}`
-          );
-          const data = await res.json();
-          const features: SearchResult[] = data?.features || [];
-          setResults(features);
-          setOpen(features.length > 0);
-        } else {
-          setResults([]);
-          setOpen(false);
-        }
+        const places = await autocompletePlaces(q, proximity);
+        setResults(places);
+        setOpen(places.length > 0);
       } catch {
         setResults([]);
         setOpen(false);
@@ -104,11 +61,19 @@ const LocationSearch = ({ label, placeholder, value, onSelect, onClear, onFocusS
     }, 400);
   };
 
-  const handleSelect = (r: SearchResult) => {
-    const fullName = r.place_name;
+  const handleSelect = async (r: SearchResult) => {
+    setLoading(true);
+    const place = await geocodePlaceId(r.placeId);
+    setLoading(false);
+
+    if (!place) {
+      return;
+    }
+
+    const fullName = place.name || r.description;
     setQuery(fullName);
     setOpen(false);
-    onSelect(fullName, { lat: r.center[1], lng: r.center[0] });
+    onSelect(fullName, place.latlng);
   };
 
   return (
@@ -139,7 +104,7 @@ const LocationSearch = ({ label, placeholder, value, onSelect, onClear, onFocusS
               onClick={() => handleSelect(r)}
             >
               <Search className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-              <span className="text-foreground line-clamp-2">{r.place_name}</span>
+              <span className="text-foreground line-clamp-2">{r.description}</span>
             </button>
           ))}
         </div>

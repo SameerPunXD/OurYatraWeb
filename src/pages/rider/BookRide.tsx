@@ -11,6 +11,7 @@ import FareEstimate from "@/components/ride/FareEstimate";
 import ActiveRideTracker from "@/components/ride/ActiveRideTracker";
 import RatingDialog from "@/components/RatingDialog";
 import SubscriptionGate from "@/components/SubscriptionGate";
+import { reverseGeocodeLatLng } from "@/lib/googleMaps";
 
 interface LatLng { lat: number; lng: number; }
 
@@ -33,43 +34,13 @@ const BookRide = () => {
   const [activeRide, setActiveRide] = useState<any>(null);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
 
-  const reverseGeocode = async (lat: number, lng: number) => {
-    const locationIqKey = import.meta.env.VITE_LOCATIONIQ_API_KEY;
-    const mapboxToken = import.meta.env.VITE_MAPBOX_PUBLIC_TOKEN;
-    const pinnedFallback = `Pinned location (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
-
-    try {
-      if (locationIqKey) {
-        const liqRes = await fetch(`https://us1.locationiq.com/v1/reverse?key=${locationIqKey}&lat=${lat}&lon=${lng}&format=json`);
-        if (liqRes.ok) {
-          const liq = await liqRes.json();
-          const full = liq?.display_name;
-          if (full) return full;
-        }
-      }
-
-      if (mapboxToken) {
-        const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${mapboxToken}&language=en&types=address,poi,place,locality,neighborhood`);
-        if (!res.ok) return pinnedFallback;
-        const data = await res.json();
-        const primary = data?.features?.[0];
-        if (!primary) return pinnedFallback;
-        return primary.place_name || pinnedFallback;
-      }
-
-      return pinnedFallback;
-    } catch {
-      return pinnedFallback;
-    }
-  };
-
   // Auto-detect location (GPS first, then IP fallback)
   useEffect(() => {
     const setInitialPickup = async (loc: LatLng) => {
       setUserLocation(loc);
       if (!pickupLatLng) {
         setPickupLatLng(loc);
-        setPickupName(await reverseGeocode(loc.lat, loc.lng));
+        setPickupName(await reverseGeocodeLatLng(loc.lat, loc.lng));
       }
     };
 
@@ -145,11 +116,11 @@ const BookRide = () => {
   const handleMapClick = useCallback(async (latlng: LatLng) => {
     if (selectingFor === "pickup") {
       setPickupLatLng(latlng);
-      setPickupName(await reverseGeocode(latlng.lat, latlng.lng));
+      setPickupName(await reverseGeocodeLatLng(latlng.lat, latlng.lng));
       setSelectingFor(null);
     } else if (selectingFor === "dropoff") {
       setDropoffLatLng(latlng);
-      setDropoffName(await reverseGeocode(latlng.lat, latlng.lng));
+      setDropoffName(await reverseGeocodeLatLng(latlng.lat, latlng.lng));
       setSelectingFor(null);
     }
   }, [selectingFor]);

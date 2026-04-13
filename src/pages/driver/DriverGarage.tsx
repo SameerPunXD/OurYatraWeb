@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -6,19 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { MapContainer, TileLayer, CircleMarker, useMapEvents } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
+import {
+  autocompletePlaces,
+  geocodeAddress,
+  geocodePlaceId,
+  hasGoogleMapsApiKey,
+  loadGoogleMaps,
+  reverseGeocodeLatLng,
+  type GooglePlaceSuggestion,
+} from "@/lib/googleMaps";
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_PUBLIC_TOKEN;
-
-function LocationPicker({ onPick }: { onPick: (lat: number, lng: number) => void }) {
-  useMapEvents({
-    click(e) {
-      onPick(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-}
+const defaultCenter = { lat: 27.7172, lng: 85.324 };
 
 const DriverGarage = () => {
   const { user } = useAuth();
@@ -37,9 +35,12 @@ const DriverGarage = () => {
   const [showCheckout, setShowCheckout] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-
-  const mapCenter: [number, number] = driverLat != null && driverLng != null ? [driverLat, driverLng] : [27.7172, 85.3240];
+  const [searchResults, setSearchResults] = useState<GooglePlaceSuggestion[]>([]);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const markerRef = useRef<google.maps.Marker | null>(null);
+  const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null);
 
   const fetchData = async () => {
     const [gRes, sRes] = await Promise.all([
@@ -50,7 +51,9 @@ const DriverGarage = () => {
     setServices(sRes.data || []);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   useEffect(() => {
     if (!selectedGarageId) return;
@@ -59,92 +62,193 @@ const DriverGarage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGarageId]);
 
-  const visibleServices = useMemo(() => services.filter((s) => s.garage_id === selectedGarageId), [services, selectedGarageId]);
-  const totalAmount = useMemo(() => visibleServices.filter((s) => selectedServiceIds.includes(s.id)).reduce((sum, s) => sum + Number(s.price || 0), 0), [visibleServices, selectedServiceIds]);
-  const toggleService = (id: string) => {
-    setSelectedServiceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-    setShowCheckout(false);
-  };
+  useEffect(() => {
+    let cancelled = false;
 
-  const reverseGeocode = async (lat: number, lng: number) => {
-    if (!MAPBOX_TOKEN) return;
-    try {
-      const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}&limit=1`);
-      const data = await res.json();
-      const name = data?.features?.[0]?.place_name;
-      if (name) setDriverAddress(name);
-    } catch {}
+    const initializeMap = async () => {
+      if (!hasGoogleMapsApiKey()) {
+        setMapError("Google Maps API key missing. Add VITE_GOOGLE_MAPS_API_KEY in .env");
+        return;
+      }
+
+      try {
+        const googleMaps = await loadGoogleMaps();
+        if (cancelled || !mapContainerRef.current || mapRef.current) {
+          return;
+        }
+
+        mapRef.current = new googleMaps.maps.Map(mapContainerRef.current, {
+          center: defaultCenter,
+          zoom: 13,
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+          clickableIcons: false,
+          gestureHandling: "greedy",
+        });
+
+        clickListenerRef.current = mapRef.current.addListener("click", (event) => {
+          if (!event.latLng) {
+            return;
+          }
+
+          void setPickedLocation(event.latLng.lat(), event.latLng.lng(), "approximate");
+        });
+      } catch (error) {
+        setMapError((error as Error).message || "Could not load Google Maps.");
+      }
+    };
+
+    initializeMap();
+
+    return () => {
+      cancelled = true;
+      clickListenerRef.current?.remove();
+      markerRef.current?.setMap(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !window.google?.maps) {
+      return;
+    }
+
+    const hasPinnedLocation = driverLat != null && driverLng != null;
+
+    if (!hasPinnedLocation) {
+      markerRef.current?.setMap(null);
+      return;
+    }
+
+    const position = { lat: driverLat, lng: driverLng };
+
+    if (!markerRef.current) {
+      markerRef.current = new google.maps.Marker({
+        map,
+        position,
+        title: "Driver location",
+      });
+    } else {
+      markerRef.current.setMap(map);
+      markerRef.current.setPosition(position);
+    }
+
+    map.setCenter(position);
+    map.setZoom(locationAccuracy === "exact" ? 16 : 14);
+  }, [driverLat, driverLng, locationAccuracy]);
+
+  const visibleServices = useMemo(
+    () => services.filter((service) => service.garage_id === selectedGarageId),
+    [services, selectedGarageId],
+  );
+
+  const totalAmount = useMemo(
+    () => visibleServices
+      .filter((service) => selectedServiceIds.includes(service.id))
+      .reduce((sum, service) => sum + Number(service.price || 0), 0),
+    [selectedServiceIds, visibleServices],
+  );
+
+  const toggleService = (id: string) => {
+    setSelectedServiceIds((current) => (
+      current.includes(id) ? current.filter((existingId) => existingId !== id) : [...current, id]
+    ));
+    setShowCheckout(false);
   };
 
   const setPickedLocation = async (lat: number, lng: number, mode: "exact" | "approximate") => {
     setDriverLat(lat);
     setDriverLng(lng);
     setLocationAccuracy(mode);
-    await reverseGeocode(lat, lng);
+    setDriverAddress(await reverseGeocodeLatLng(lat, lng));
   };
 
   const geocodeApproximate = async () => {
-    if (!MAPBOX_TOKEN || !driverAddress) return false;
-    try {
-      const q = encodeURIComponent(driverAddress);
-      const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?access_token=${MAPBOX_TOKEN}&limit=1&country=np`);
-      const data = await res.json();
-      const center = data?.features?.[0]?.center;
-      if (Array.isArray(center) && center.length === 2) {
-        await setPickedLocation(center[1], center[0], "approximate");
-        toast({ title: "Approximate location used" });
-        return true;
-      }
-    } catch {}
-    return false;
+    const result = await geocodeAddress(driverAddress);
+    if (!result) {
+      return false;
+    }
+
+    setDriverAddress(result.name);
+    await setPickedLocation(result.latlng.lat, result.latlng.lng, "approximate");
+    toast({ title: "Approximate location used" });
+    return true;
   };
 
   const useCurrentLocation = () => {
     if (!navigator.geolocation) {
-      geocodeApproximate();
-      return toast({ title: "GPS unavailable", description: "Using approximate location from address." });
+      void geocodeApproximate();
+      toast({ title: "GPS unavailable", description: "Using approximate location from address." });
+      return;
     }
+
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        await setPickedLocation(pos.coords.latitude, pos.coords.longitude, "exact");
+      async (position) => {
+        await setPickedLocation(position.coords.latitude, position.coords.longitude, "exact");
         toast({ title: "Exact location captured" });
       },
       async () => {
         const ok = await geocodeApproximate();
-        if (!ok) toast({ title: "Location failed", description: "Add address or pick on map.", variant: "destructive" });
-      }
+        if (!ok) {
+          toast({ title: "Location failed", description: "Add address or pick on map.", variant: "destructive" });
+        }
+      },
     );
   };
 
   const searchMapPlaces = async () => {
-    if (!MAPBOX_TOKEN || !searchQuery.trim()) return;
+    if (!searchQuery.trim()) return;
     setSearching(true);
+
     try {
-      const q = encodeURIComponent(searchQuery.trim());
-      const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?access_token=${MAPBOX_TOKEN}&limit=6&country=np`);
-      const data = await res.json();
-      setSearchResults(data?.features || []);
+      const results = await autocompletePlaces(
+        searchQuery.trim(),
+        driverLat != null && driverLng != null ? { lat: driverLat, lng: driverLng } : null,
+      );
+      setSearchResults(results);
     } catch {
       toast({ title: "Search failed", variant: "destructive" });
-    } finally { setSearching(false); }
+    } finally {
+      setSearching(false);
+    }
   };
 
-  const pickResult = async (feature: any) => {
-    const [lng, lat] = feature.center || [];
-    if (lat == null || lng == null) return;
-    setDriverAddress(feature.place_name || feature.text || "Selected on map");
-    await setPickedLocation(lat, lng, "approximate");
+  const pickResult = async (suggestion: GooglePlaceSuggestion) => {
+    const place = await geocodePlaceId(suggestion.placeId);
+    if (!place) {
+      toast({ title: "Location failed", description: "Could not resolve the selected place.", variant: "destructive" });
+      return;
+    }
+
+    setDriverAddress(place.name);
+    await setPickedLocation(place.latlng.lat, place.latlng.lng, "approximate");
+    setSearchResults([]);
     toast({ title: "Location selected" });
   };
 
   const placeOrder = async () => {
-    if (!user || !selectedGarageId || selectedServiceIds.length === 0) return toast({ title: "Missing info", description: "Select garage and services.", variant: "destructive" });
-    if (!driverAddress) return toast({ title: "Location needed", description: "Please add your location/address.", variant: "destructive" });
-    if (driverLat == null || driverLng == null) await geocodeApproximate();
+    if (!user || !selectedGarageId || selectedServiceIds.length === 0) {
+      toast({ title: "Missing info", description: "Select garage and services.", variant: "destructive" });
+      return;
+    }
+
+    if (!driverAddress) {
+      toast({ title: "Location needed", description: "Please add your location/address.", variant: "destructive" });
+      return;
+    }
+
+    if (driverLat == null || driverLng == null) {
+      await geocodeApproximate();
+    }
 
     setSubmitting(true);
+
     try {
-      const selectedItems = visibleServices.filter((s) => selectedServiceIds.includes(s.id)).map((s) => ({ id: s.id, name: s.name, price: s.price }));
+      const selectedItems = visibleServices
+        .filter((service) => selectedServiceIds.includes(service.id))
+        .map((service) => ({ id: service.id, name: service.name, price: service.price }));
+
       const { error } = await (supabase as any).from("garage_orders").insert({
         garage_id: selectedGarageId,
         driver_id: user.id,
@@ -158,26 +262,35 @@ const DriverGarage = () => {
         driver_lng: driverLng,
         location_accuracy: locationAccuracy,
       });
+
       if (error) throw error;
+
       toast({ title: "Order placed", description: "Garage can now see your location." });
-      setSelectedServiceIds([]); setNotes("");
+      setSelectedServiceIds([]);
+      setNotes("");
+      setSearchQuery("");
+      setSearchResults([]);
     } catch (error: any) {
       toast({ title: "Failed", description: error.message || "Could not place order", variant: "destructive" });
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold">Garage Services</h2>
 
-      <div className="grid sm:grid-cols-2 gap-4">
-        {garages.map((g) => (
-          <Card key={g.id} className={selectedGarageId === g.id ? "border-primary" : ""}>
-            <CardContent className="p-4 space-y-2">
-              <p className="font-semibold">{g.name}</p>
-              <p className="text-sm text-muted-foreground">{g.address}</p>
-              <p className="text-xs text-muted-foreground">{g.phone || "No phone"}</p>
-              <Button size="sm" onClick={() => { setSelectedGarageId(g.id); setSelectedServiceIds([]); setShowCheckout(false); }}>Choose Garage</Button>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {garages.map((garage) => (
+          <Card key={garage.id} className={selectedGarageId === garage.id ? "border-primary" : ""}>
+            <CardContent className="space-y-2 p-4">
+              <p className="font-semibold">{garage.name}</p>
+              <p className="text-sm text-muted-foreground">{garage.address}</p>
+              <p className="text-xs text-muted-foreground">{garage.phone || "No phone"}</p>
+              <Button size="sm" onClick={() => { setSelectedGarageId(garage.id); setSelectedServiceIds([]); setShowCheckout(false); }}>
+                Choose Garage
+              </Button>
             </CardContent>
           </Card>
         ))}
@@ -185,38 +298,40 @@ const DriverGarage = () => {
 
       {selectedGarageId && (
         <Card>
-          <CardHeader><CardTitle>Select services</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Select services</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-3">
             {visibleServices.length === 0 ? (
               <p className="text-sm text-muted-foreground">No services listed for this garage.</p>
             ) : (
               <div className="grid gap-2">
                 <AnimatePresence initial={false}>
-                  {visibleServices.map((s, i) => {
-                    const selected = selectedServiceIds.includes(s.id);
+                  {visibleServices.map((service, index) => {
+                    const selected = selectedServiceIds.includes(service.id);
                     return (
                       <motion.label
-                        key={s.id}
+                        key={service.id}
                         initial={{ opacity: 0, y: 10, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                        transition={{ duration: 0.2, delay: i * 0.03 }}
+                        transition={{ duration: 0.2, delay: index * 0.03 }}
                         whileTap={{ scale: 0.995 }}
-                        className={`flex items-center justify-between border rounded-md p-3 cursor-pointer gap-3 transition-all ${selected ? "border-primary bg-primary/5 shadow-sm" : "hover:border-primary/40 hover:bg-muted/40"}`}
+                        className={`flex cursor-pointer items-center justify-between gap-3 rounded-md border p-3 transition-all ${selected ? "border-primary bg-primary/5 shadow-sm" : "hover:border-primary/40 hover:bg-muted/40"}`}
                       >
                         <div className="flex items-center gap-3">
-                          {s.image_url && <img src={s.image_url} alt={s.name} className={`h-12 w-12 rounded object-cover border transition-transform ${selected ? "scale-105" : ""}`} />}
+                          {service.image_url && <img src={service.image_url} alt={service.name} className={`h-12 w-12 rounded border object-cover transition-transform ${selected ? "scale-105" : ""}`} />}
                           <div>
-                            <p className="font-medium">{s.name}</p>
-                            <p className="text-xs text-muted-foreground">{s.description || "—"}</p>
+                            <p className="font-medium">{service.name}</p>
+                            <p className="text-xs text-muted-foreground">{service.description || "—"}</p>
                           </div>
                         </div>
                         <button
                           type="button"
-                          onClick={() => toggleService(s.id)}
-                          className={`px-3 py-1.5 rounded-md text-xs font-semibold border transition-colors ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-foreground border-border"}`}
+                          onClick={() => toggleService(service.id)}
+                          className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-foreground"}`}
                         >
-                          Rs {s.price} {selected ? "• Selected" : "• Add"}
+                          Rs {service.price} {selected ? "• Selected" : "• Add"}
                         </button>
                       </motion.label>
                     );
@@ -227,46 +342,40 @@ const DriverGarage = () => {
 
             <div className="space-y-3 pt-2">
               {!showCheckout ? (
-                <div className="rounded-md border p-3 bg-muted/30 space-y-2">
+                <div className="space-y-2 rounded-md border bg-muted/30 p-3">
                   <p className="text-sm text-muted-foreground">
                     Step 2 complete: {selectedServiceIds.length} service(s) selected.
                   </p>
-                  <Button
-                    onClick={() => setShowCheckout(true)}
-                    disabled={selectedServiceIds.length === 0}
-                  >
+                  <Button onClick={() => setShowCheckout(true)} disabled={selectedServiceIds.length === 0}>
                     Continue to Location & Notes
                   </Button>
                 </div>
               ) : (
                 <>
-                  <Input placeholder="Your current address / landmark" value={driverAddress} onChange={(e) => setDriverAddress(e.target.value)} />
-                  <div className="flex gap-2 flex-wrap">
-                    <Button type="button" variant="outline" size="sm" onClick={useCurrentLocation}>Use My Current Location</Button>
-                    <Button type="button" variant="outline" size="sm" onClick={searchMapPlaces} disabled={searching || !searchQuery.trim()}>{searching ? "Searching..." : "Search typed place"}</Button>
+                  <Input placeholder="Your current address / landmark" value={driverAddress} onChange={(event) => setDriverAddress(event.target.value)} />
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={useCurrentLocation}>
+                      Use My Current Location
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={searchMapPlaces} disabled={searching || !searchQuery.trim()}>
+                      {searching ? "Searching..." : "Search typed place"}
+                    </Button>
                   </div>
-                  <Input placeholder="Type place and click 'Search typed place'" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                  <Input placeholder="Type place and click 'Search typed place'" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
 
-                  {MAPBOX_TOKEN ? (
-                    <div className="rounded-md border overflow-hidden">
-                      <MapContainer center={mapCenter} zoom={13} style={{ height: 280, width: "100%" }}>
-                        <TileLayer
-                          url={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
-                          attribution='&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a>'
-                        />
-                        <LocationPicker onPick={(lat, lng) => setPickedLocation(lat, lng, "approximate")} />
-                        {driverLat != null && driverLng != null && <CircleMarker center={[driverLat, driverLng]} radius={8} pathOptions={{ color: "#ef4444", fillOpacity: 0.8 }} />}
-                      </MapContainer>
-                    </div>
+                  {mapError ? (
+                    <p className="text-xs text-destructive">{mapError}</p>
                   ) : (
-                    <p className="text-xs text-destructive">Mapbox token missing. Add VITE_MAPBOX_PUBLIC_TOKEN in .env</p>
+                    <div className="overflow-hidden rounded-md border">
+                      <div ref={mapContainerRef} className="h-[280px] w-full" />
+                    </div>
                   )}
 
                   {searchResults.length > 0 && (
-                    <div className="max-h-40 overflow-auto border rounded-md p-2 space-y-1">
-                      {searchResults.map((r) => (
-                        <button key={r.id} className="w-full text-left text-sm hover:bg-muted rounded px-2 py-1" onClick={() => pickResult(r)}>
-                          {r.place_name}
+                    <div className="max-h-40 space-y-1 overflow-auto rounded-md border p-2">
+                      {searchResults.map((result) => (
+                        <button key={result.placeId} className="w-full rounded px-2 py-1 text-left text-sm hover:bg-muted" onClick={() => pickResult(result)}>
+                          {result.description}
                         </button>
                       ))}
                     </div>
@@ -274,17 +383,23 @@ const DriverGarage = () => {
 
                   <p className="text-xs text-muted-foreground">
                     {driverLat != null && driverLng != null
-                      ? `Location mode: ${locationAccuracy === "exact" ? "Exact GPS" : "Approximate (map/address)"}. Tip: click anywhere on map to set pin.`
-                      : "Location not pinned yet. Use GPS, click map, or search place."}
+                      ? `Location mode: ${locationAccuracy === "exact" ? "Exact GPS" : "Approximate (map/address)"}. Click on the map to update your pin.`
+                      : "Location not pinned yet. Use GPS, click the map, or search for a place."}
                   </p>
 
-                  <Input placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
+                  <Input placeholder="Notes (optional)" value={notes} onChange={(event) => setNotes(event.target.value)} />
                   <div className="flex gap-2">
-                    <Button type="button" variant={paymentMethod === "cash" ? "default" : "outline"} size="sm" onClick={() => setPaymentMethod("cash")}>Cash</Button>
-                    <Button type="button" variant={paymentMethod === "online" ? "default" : "outline"} size="sm" onClick={() => setPaymentMethod("online")}>Online</Button>
+                    <Button type="button" variant={paymentMethod === "cash" ? "default" : "outline"} size="sm" onClick={() => setPaymentMethod("cash")}>
+                      Cash
+                    </Button>
+                    <Button type="button" variant={paymentMethod === "online" ? "default" : "outline"} size="sm" onClick={() => setPaymentMethod("online")}>
+                      Online
+                    </Button>
                   </div>
                   <p className="text-sm font-semibold">Total: Rs {totalAmount}</p>
-                  <Button onClick={placeOrder} disabled={submitting || selectedServiceIds.length === 0}>{submitting ? "Placing..." : "Place Garage Order"}</Button>
+                  <Button onClick={placeOrder} disabled={submitting || selectedServiceIds.length === 0}>
+                    {submitting ? "Placing..." : "Place Garage Order"}
+                  </Button>
                 </>
               )}
             </div>

@@ -1,5 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-@import 'leaflet/dist/leaflet.css';
 
 @tailwind base;
 @tailwind components;
@@ -88,20 +87,4 @@
     background: hsl(0 0% 75%);
     border-radius: 3px;
   }
-}
-
-/* Keep Leaflet map layers below app drawers/sheets on mobile */
-.leaflet-container,
-.leaflet-pane,
-.leaflet-top,
-.leaflet-bottom,
-.leaflet-control {
-  z-index: 0 !important;
-}
-
-.leaflet-marker-pane,
-.leaflet-overlay-pane,
-.leaflet-tooltip-pane,
-.leaflet-popup-pane {
-  z-index: 1 !important;
 }
