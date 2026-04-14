@@ -96,6 +96,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signOut = async () => {
+    if (user && (roles.includes("driver") || activeRole === "driver")) {
+      try {
+        await (supabase as any).rpc("remove_driver_from_pending_rides");
+      } catch (error) {
+        console.debug("[Auth] failed to remove driver from pending rides during sign-out", error);
+      }
+
+      try {
+        await supabase
+          .from("driver_profiles")
+          .update({ is_online: false })
+          .eq("id", user.id);
+      } catch (error) {
+        console.debug("[Auth] failed to set driver offline during sign-out", error);
+      }
+    }
+
     await supabase.auth.signOut();
     localStorage.removeItem("ouryatra_active_role");
     setProfile(null);

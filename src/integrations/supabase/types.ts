@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -11,31 +11,6 @@ export type Database = {
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.4"
-  }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
   }
   public: {
     Tables: {
@@ -225,9 +200,13 @@ export type Database = {
         Row: {
           availability: string
           created_at: string
+          h3_r9: string | null
           id: string
           is_online: boolean
+          last_seen_at: string | null
+          lat: number | null
           license_number: string
+          lng: number | null
           national_id_url: string | null
           profile_photo_url: string | null
           service_mode: string
@@ -240,9 +219,13 @@ export type Database = {
         Insert: {
           availability?: string
           created_at?: string
+          h3_r9?: string | null
           id: string
           is_online?: boolean
+          last_seen_at?: string | null
+          lat?: number | null
           license_number?: string
+          lng?: number | null
           national_id_url?: string | null
           profile_photo_url?: string | null
           service_mode?: string
@@ -255,9 +238,13 @@ export type Database = {
         Update: {
           availability?: string
           created_at?: string
+          h3_r9?: string | null
           id?: string
           is_online?: boolean
+          last_seen_at?: string | null
+          lat?: number | null
           license_number?: string
+          lng?: number | null
           national_id_url?: string | null
           profile_photo_url?: string | null
           service_mode?: string
@@ -821,9 +808,55 @@ export type Database = {
         }
         Relationships: []
       }
+      ride_driver_candidates: {
+        Row: {
+          distance_km: number | null
+          driver_id: string
+          expires_at: string | null
+          matched_at: string
+          ride_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          distance_km?: number | null
+          driver_id: string
+          expires_at?: string | null
+          matched_at?: string
+          ride_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          distance_km?: number | null
+          driver_id?: string
+          expires_at?: string | null
+          matched_at?: string
+          ride_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_driver_candidates_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "driver_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_driver_candidates_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rides: {
         Row: {
           cancellation_reason: string | null
+          candidate_driver_ids: string[]
           completed_at: string | null
           created_at: string
           distance_km: number | null
@@ -834,6 +867,7 @@ export type Database = {
           fare: number | null
           id: string
           notes: string | null
+          pickup_h3_r9: string | null
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_location: string
@@ -846,6 +880,7 @@ export type Database = {
         }
         Insert: {
           cancellation_reason?: string | null
+          candidate_driver_ids?: string[]
           completed_at?: string | null
           created_at?: string
           distance_km?: number | null
@@ -856,6 +891,7 @@ export type Database = {
           fare?: number | null
           id?: string
           notes?: string | null
+          pickup_h3_r9?: string | null
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location: string
@@ -868,6 +904,7 @@ export type Database = {
         }
         Update: {
           cancellation_reason?: string | null
+          candidate_driver_ids?: string[]
           completed_at?: string | null
           created_at?: string
           distance_km?: number | null
@@ -878,6 +915,7 @@ export type Database = {
           fare?: number | null
           id?: string
           notes?: string | null
+          pickup_h3_r9?: string | null
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location?: string
@@ -1125,6 +1163,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      bus_seat_index_from_label: {
+        Args: { _seat_label: string }
+        Returns: number
+      }
+      bus_seat_label_from_index: {
+        Args: { _seat_index: number }
+        Returns: string
+      }
+      claim_ride: { Args: { p_ride_id: string }; Returns: Json }
+      enqueue_driver_for_pending_rides: {
+        Args: { p_h3_cells: string[] }
+        Returns: number
+      }
+      get_bus_reserved_seats: { Args: { _bus_id: string }; Returns: string[] }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1132,11 +1184,22 @@ export type Database = {
         }
         Returns: boolean
       }
-      get_bus_reserved_seats: {
+      match_nearby_drivers: {
         Args: {
-          _bus_id: string
+          p_h3_cells: string[]
+          p_last_seen_after: string
+          p_limit?: number
+          p_service_mode?: string
         }
-        Returns: string[]
+        Returns: {
+          h3_r9: string
+          id: string
+          last_seen_at: string
+          lat: number
+          lng: number
+          service_mode: string
+          vehicle_type: string
+        }[]
       }
       notify_user: {
         Args: {
@@ -1146,6 +1209,16 @@ export type Database = {
           _user_id: string
         }
         Returns: undefined
+      }
+      prune_stale_pending_ride_candidates: { Args: never; Returns: number }
+      remove_driver_from_pending_rides: { Args: never; Returns: number }
+      replace_ride_driver_candidates: {
+        Args: { p_driver_ids: string[]; p_ride_id: string }
+        Returns: Json
+      }
+      sync_driver_pending_rides: {
+        Args: { p_h3_cells: string[] }
+        Returns: Json
       }
     }
     Enums: {
@@ -1308,9 +1381,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       account_status: ["pending", "approved", "rejected", "blocked"],
@@ -1354,4 +1424,3 @@ export const Constants = {
     },
   },
 } as const
-

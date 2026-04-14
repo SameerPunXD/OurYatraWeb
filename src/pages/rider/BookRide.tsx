@@ -12,10 +12,25 @@ import ActiveRideTracker from "@/components/ride/ActiveRideTracker";
 import RatingDialog from "@/components/RatingDialog";
 import SubscriptionGate from "@/components/SubscriptionGate";
 import { reverseGeocodeLatLng } from "@/lib/googleMaps";
+import { getH3Cell } from "@/lib/h3";
+import { getNearbyDrivers } from "@/lib/matching";
+import { dispatchRideDriverCandidates, getRideDriverCandidates } from "@/lib/rideCandidates";
+import { useDriverLiveLocation } from "@/hooks/useDriverLiveLocation";
 
 interface LatLng { lat: number; lng: number; }
 
+interface MatchingDebugState {
+  candidateCount: number;
+  nearbyCellCount: number;
+  riderCell: string;
+  triedDriverCount: number;
+  usedK: number;
+}
+
 type BookingState = "selecting" | "confirming" | "searching" | "active" | "completed";
+const DRIVER_OFFER_WINDOW_SECONDS = 5;
+const MAX_MATCHING_K = 8;
+const REMATCH_INTERVAL_MS = DRIVER_OFFER_WINDOW_SECONDS * 1_000;
 
 const metersToLat = (meters: number) => meters / 111320;
 
@@ -55,6 +70,8 @@ const BookRide = () => {
   const [booking, setBooking] = useState(false);
   const [activeRide, setActiveRide] = useState<any>(null);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  const [matchingDebug, setMatchingDebug] = useState<MatchingDebugState | null>(null);
+  const activeDriverLocation = useDriverLiveLocation(activeRide?.driver_id ?? null);
 
   // Auto-detect location (GPS first, then IP fallback)
   useEffect(() => {
@@ -148,7 +165,63 @@ const BookRide = () => {
         }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [toast, user]);
+
+  const dispatchNextRideCandidate = useCallback(async (ride: any) => {
+    if (!ride?.id || ride?.status !== "pending" || !ride.pickup_lat || !ride.pickup_lng) {
+      return;
+    }
+
+    try {
+      const existingCandidates = await getRideDriverCandidates(ride.id);
+      const now = Date.now();
+      const hasActiveOffer = existingCandidates.some((candidate) => (
+        candidate.status === "active"
+        && (!candidate.expires_at || new Date(candidate.expires_at).getTime() > now)
+      ));
+      const triedDriverIds = Array.from(new Set(existingCandidates.map((candidate) => candidate.driver_id)));
+
+      if (hasActiveOffer) {
+        return;
+      }
+
+      const nearbyDrivers = await getNearbyDrivers(ride.pickup_lat, ride.pickup_lng, MAX_MATCHING_K, {
+        excludeDriverIds: triedDriverIds,
+        serviceMode: "ride",
+        vehicleType: ride.vehicle_type,
+      });
+
+      const candidateDriverIds = nearbyDrivers.drivers.slice(0, 1).map((driver) => driver.id);
+
+      setMatchingDebug({
+        candidateCount: candidateDriverIds.length,
+        nearbyCellCount: nearbyDrivers.nearbyCells.length,
+        riderCell: nearbyDrivers.riderCell,
+        triedDriverCount: triedDriverIds.length,
+        usedK: nearbyDrivers.usedK,
+      });
+
+      await dispatchRideDriverCandidates(ride.id, candidateDriverIds, DRIVER_OFFER_WINDOW_SECONDS);
+    } catch (matchingError) {
+      console.debug("[H3 matching] failed to dispatch pending ride candidate", matchingError);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (state !== "searching" || !activeRide || activeRide.status !== "pending") {
+      return;
+    }
+
+    void dispatchNextRideCandidate(activeRide);
+
+    const intervalId = window.setInterval(() => {
+      void dispatchNextRideCandidate(activeRide);
+    }, REMATCH_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeRide, dispatchNextRideCandidate, state]);
 
   const handleMapClick = useCallback(async (latlng: LatLng) => {
     if (selectingFor === "pickup") {
@@ -165,10 +238,33 @@ const BookRide = () => {
   const handleBook = async (vehicleType: string, fare: number, scheduledAt: string | null, notes: string) => {
     if (!user || !pickupLatLng || !dropoffLatLng) return;
     setBooking(true);
+    setMatchingDebug(null);
 
     const distance = haversineDistance(pickupLatLng, dropoffLatLng);
+    let dispatchedDriverIds: string[] = [];
+    let matchingSummary: MatchingDebugState | null = null;
+
+    try {
+      const nearbyDrivers = await getNearbyDrivers(pickupLatLng.lat, pickupLatLng.lng, MAX_MATCHING_K, {
+        serviceMode: "ride",
+        vehicleType,
+      });
+
+      dispatchedDriverIds = nearbyDrivers.drivers.slice(0, 1).map((driver) => driver.id);
+      matchingSummary = {
+        candidateCount: dispatchedDriverIds.length,
+        nearbyCellCount: nearbyDrivers.nearbyCells.length,
+        riderCell: nearbyDrivers.riderCell,
+        triedDriverCount: 0,
+        usedK: nearbyDrivers.usedK,
+      };
+      setMatchingDebug(matchingSummary);
+    } catch (matchingError) {
+      console.debug("[H3 matching] failed to fetch nearby drivers", matchingError);
+    }
 
     const { data, error } = await supabase.from("rides").insert({
+      pickup_h3_r9: getH3Cell(pickupLatLng.lat, pickupLatLng.lng, 9),
       rider_id: user.id,
       pickup_location: pickupName,
       dropoff_location: dropoffName,
@@ -186,9 +282,20 @@ const BookRide = () => {
     if (error) {
       toast({ title: "Booking failed", description: error.message, variant: "destructive" });
     } else {
+      try {
+        await dispatchRideDriverCandidates(data.id, dispatchedDriverIds, DRIVER_OFFER_WINDOW_SECONDS);
+      } catch (dispatchError) {
+        console.debug("[H3 matching] failed to dispatch first ride candidate", dispatchError);
+      }
+
       setActiveRide(data);
       setState("searching");
-      toast({ title: scheduledAt ? "Ride scheduled!" : "Ride booked!", description: "Looking for a driver..." });
+      toast({
+        title: scheduledAt ? "Ride scheduled!" : "Ride booked!",
+        description: matchingSummary?.candidateCount
+          ? `Sent the request to the nearest driver in ring K=${matchingSummary.usedK}. We expand again after ${DRIVER_OFFER_WINDOW_SECONDS} seconds if needed.`
+          : "No nearby drivers are online right now. We'll keep expanding the search.",
+      });
     }
     setBooking(false);
   };
@@ -206,6 +313,7 @@ const BookRide = () => {
   const resetBooking = () => {
     setState("selecting");
     setActiveRide(null);
+    setMatchingDebug(null);
     setPickupName("");
     setDropoffName("");
     setPickupLatLng(userLocation);
@@ -238,7 +346,7 @@ const BookRide = () => {
         <RideMap
           pickup={pickupLatLng}
           dropoff={dropoffLatLng}
-          driverLocation={null}
+          driverLocation={activeDriverLocation}
           onMapClick={handleMapClick}
           selectingFor={selectingFor}
           userLocation={userLocation}
@@ -324,6 +432,17 @@ const BookRide = () => {
 
         {(state === "searching" || state === "active") && activeRide && (
           <>
+            {state === "searching" && import.meta.env.DEV && matchingDebug && (
+              <Card>
+                <CardContent className="space-y-1 p-4 text-sm text-muted-foreground">
+                  <p>Rider H3 cell: <span className="font-mono text-foreground">{matchingDebug.riderCell}</span></p>
+                  <p>Nearby cells scanned: {matchingDebug.nearbyCellCount}</p>
+                  <p>Current ring used: K={matchingDebug.usedK}</p>
+                  <p>Drivers already tried: {matchingDebug.triedDriverCount}</p>
+                  <p>Drivers targeted this wave: {matchingDebug.candidateCount}</p>
+                </CardContent>
+              </Card>
+            )}
             <ActiveRideTracker
               ride={activeRide}
               onCancelled={resetBooking}

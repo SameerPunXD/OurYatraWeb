@@ -11,6 +11,7 @@ import RatingDialog from "@/components/RatingDialog";
 import ChatPanel from "@/components/ChatPanel";
 import CallButton from "@/components/CallButton";
 import RideMap from "@/components/ride/RideMap";
+import { useDriverLiveLocation } from "@/hooks/useDriverLiveLocation";
 
 type RideStatus = Database["public"]["Enums"]["ride_status"];
 
@@ -32,6 +33,7 @@ const DriverRides = () => {
   const [ratedIds, setRatedIds] = useState<Set<string>>(new Set());
   const [riderPhones, setRiderPhones] = useState<Record<string, string>>({});
   const [riderNames, setRiderNames] = useState<Record<string, string>>({});
+  const myDriverLocation = useDriverLiveLocation(user?.id ?? null);
 
   const fetchRides = async () => {
     if (!user) return;
@@ -67,8 +69,11 @@ const DriverRides = () => {
   useEffect(() => { fetchRides(); }, [user]);
 
   useEffect(() => {
+    if (!user) return;
+
     const channel = supabase.channel("driver-rides")
       .on("postgres_changes", { event: "*", schema: "public", table: "rides" }, () => fetchRides())
+      .on("postgres_changes", { event: "*", schema: "public", table: "ride_driver_candidates", filter: `driver_id=eq.${user.id}` }, () => fetchRides())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user]);
@@ -76,7 +81,7 @@ const DriverRides = () => {
   const acceptRide = async (rideId: string) => {
     if (!user) return;
     const ride = pendingRides.find(r => r.id === rideId);
-    const { error } = await supabase.from("rides").update({ driver_id: user.id, status: "accepted" as RideStatus }).eq("id", rideId);
+    const { error } = await (supabase as any).rpc("claim_ride", { p_ride_id: rideId });
     if (error) toast({ title: "Failed", description: error.message, variant: "destructive" });
     else {
       toast({ title: "Ride accepted!" });
@@ -125,7 +130,7 @@ const DriverRides = () => {
                   <RideMap
                     pickup={r.pickup_lat ? { lat: r.pickup_lat, lng: r.pickup_lng } : null}
                     dropoff={r.dropoff_lat ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null}
-                    driverLocation={null}
+                    driverLocation={myDriverLocation}
                     onMapClick={() => {}}
                     selectingFor={null}
                     userLocation={null}
@@ -192,7 +197,7 @@ const DriverRides = () => {
                 <RideMap
                   pickup={r.pickup_lat ? { lat: r.pickup_lat, lng: r.pickup_lng } : null}
                   dropoff={r.dropoff_lat ? { lat: r.dropoff_lat, lng: r.dropoff_lng } : null}
-                  driverLocation={null}
+                  driverLocation={myDriverLocation}
                   onMapClick={() => {}}
                   selectingFor={null}
                   userLocation={null}

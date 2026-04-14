@@ -248,7 +248,7 @@ const SubscriptionPage = () => {
             <h3 className="text-lg font-semibold">{normalizePlanNameForDisplay((subscription as any).subscription_plans?.name)}</h3>
             <p className="text-2xl font-bold text-primary mt-1">Rs {(subscription as any).subscription_plans?.price}</p>
             <p className="text-sm text-muted-foreground mt-2">Expires: {new Date(subscription.ends_at).toLocaleDateString()}</p>
-            <Button variant="destructive" size="sm" className="mt-4" onClick={handleCancel}>
+            <Button type="button" variant="destructive" size="sm" className="mt-4" onClick={handleCancel}>
               Cancel Subscription
             </Button>
           </CardContent>
@@ -292,7 +292,7 @@ const SubscriptionPage = () => {
                   </ul>
 
                   {!isActive && selectedPlanId !== plan.id && (
-                    <Button className="w-full" variant="outline" onClick={() => setSelectedPlanId(plan.id)}>
+                    <Button type="button" className="w-full" variant="outline" onClick={() => setSelectedPlanId(plan.id)}>
                       Choose this plan
                     </Button>
                   )}
@@ -343,6 +343,7 @@ const SubscriptionPage = () => {
                       )}
 
                       <Button
+                        type="button"
                         className="w-full"
                         variant={isActive ? "secondary" : "default"}
                         disabled={isActive || hasPending || hasAnyPendingPayment || !!processingPlanId}

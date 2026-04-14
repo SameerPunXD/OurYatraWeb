@@ -23,6 +23,7 @@ const DriverDashboard = () => {
   const [isOnline, setIsOnline] = useState(false);
   const [serviceMode, setServiceMode] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [presenceDebug, setPresenceDebug] = useState<{ h3_r9: string | null; last_seen_at: string | null } | null>(null);
   const [stats, setStats] = useState({
     todayEarnings: 0,
     totalRides: 0,
@@ -41,12 +42,16 @@ const DriverDashboard = () => {
     if (!user) return;
     const { data } = await supabase
       .from("driver_profiles")
-      .select("is_online, service_mode")
+      .select("is_online, service_mode, h3_r9, last_seen_at")
       .eq("id", user.id)
       .maybeSingle();
     if (data) {
       setIsOnline(data.is_online ?? false);
       setServiceMode(data.service_mode ?? "all");
+      setPresenceDebug({
+        h3_r9: (data as any).h3_r9 ?? null,
+        last_seen_at: (data as any).last_seen_at ?? null,
+      });
     }
   }, [user]);
 
@@ -98,37 +103,64 @@ const DriverDashboard = () => {
   }, [user, fetchDriverProfile, fetchStats, fetchIncoming]);
 
   useEffect(() => {
+    if (!user) return;
+
     const ch = supabase
-      .channel("driver-overview")
+      .channel(`driver-overview-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "rides" }, () => { fetchIncoming(); fetchStats(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ride_driver_candidates", filter: `driver_id=eq.${user.id}` }, () => { fetchIncoming(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "parcels" }, () => { fetchIncoming(); fetchStats(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "food_orders" }, () => { fetchIncoming(); fetchStats(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [fetchIncoming, fetchStats]);
+  }, [fetchIncoming, fetchStats, user]);
 
   const toggleOnline = async (val: boolean) => {
     if (!user) return;
+    const previousIsOnline = isOnline;
     setIsOnline(val);
+
+    if (!val) {
+      const { error: removeError } = await (supabase as any).rpc("remove_driver_from_pending_rides");
+      if (removeError) {
+        setIsOnline(previousIsOnline);
+        toast({ title: "Failed to update status", description: removeError.message, variant: "destructive" });
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("driver_profiles")
       .upsert({ id: user.id, is_online: val, service_mode: serviceMode }, { onConflict: "id" });
-    if (error) toast({ title: "Failed to update status", variant: "destructive" });
+    if (error) {
+      setIsOnline(previousIsOnline);
+      toast({ title: "Failed to update status", variant: "destructive" });
+      return;
+    }
+    window.dispatchEvent(new Event("driver-profile-changed"));
+    fetchDriverProfile();
   };
 
   const changeServiceMode = async (mode: string) => {
     if (!user) return;
+    const previousMode = serviceMode;
     setServiceMode(mode);
     const { error } = await supabase
       .from("driver_profiles")
       .upsert({ id: user.id, is_online: isOnline, service_mode: mode }, { onConflict: "id" });
-    if (error) toast({ title: "Failed to update mode", variant: "destructive" });
+    if (error) {
+      setServiceMode(previousMode);
+      toast({ title: "Failed to update mode", variant: "destructive" });
+      return;
+    }
+    window.dispatchEvent(new Event("driver-profile-changed"));
+    fetchDriverProfile();
   };
 
   const acceptRide = async (id: string) => {
     if (!user) return;
     const ride = pendingRides.find(r => r.id === id);
-    const { error } = await supabase.from("rides").update({ driver_id: user.id, status: "accepted" as RideStatus }).eq("id", id);
+    const { error } = await (supabase as any).rpc("claim_ride", { p_ride_id: id });
     if (error) toast({ title: "Failed", description: error.message, variant: "destructive" });
     else {
       toast({ title: "Ride accepted!" });
@@ -202,6 +234,11 @@ const DriverDashboard = () => {
             <div>
               <p className="text-sm font-medium">{isOnline ? "Online" : "Offline"}</p>
               <p className="text-xs text-muted-foreground">{isOnline ? "Accepting requests" : "Not accepting"}</p>
+              {import.meta.env.DEV && presenceDebug?.h3_r9 && (
+                <p className="text-[11px] text-muted-foreground">
+                  H3: <span className="font-mono">{presenceDebug.h3_r9}</span>
+                </p>
+              )}
             </div>
             <Switch checked={isOnline} onCheckedChange={toggleOnline} />
           </CardContent>

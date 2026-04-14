@@ -2,12 +2,15 @@ import { Outlet } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import DashboardSidebar from "./DashboardSidebar";
 import DashboardTopbar from "./DashboardTopbar";
+import { useDriverPresence } from "@/hooks/useDriverPresence";
 
 interface DashboardLayoutProps {
   title?: string;
 }
 
 const DashboardLayout = ({ title }: DashboardLayoutProps) => {
+  useDriverPresence();
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full max-w-full overflow-x-hidden">

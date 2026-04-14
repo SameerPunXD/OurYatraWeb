@@ -22,26 +22,45 @@ const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
   const [settingsLoading, setSettingsLoading] = useState(true);
 
   useEffect(() => {
-    const loadSettings = async () => {
-      setSettingsLoading(true);
-      const { data } = await supabase
-        .from("app_settings" as any)
-        .select("key, value_bool")
-        .in("key", ["require_rider_subscription", "require_bus_operator_subscription"]);
+    let isActive = true;
 
-      const settings = new Map(
-        (((data as any[]) || [])).map((row) => [row.key, Boolean(row.value_bool)]),
-      );
+    const loadSettings = async (showLoading = false) => {
+      if (showLoading && isActive) {
+        setSettingsLoading(true);
+      }
 
-      setRequireRiderSubscription(settings.get("require_rider_subscription") ?? false);
-      setRequireBusOperatorSubscription(settings.get("require_bus_operator_subscription") ?? true);
-      setSettingsLoading(false);
+      try {
+        const { data } = await supabase
+          .from("app_settings" as any)
+          .select("key, value_bool")
+          .in("key", ["require_rider_subscription", "require_bus_operator_subscription"]);
+
+        if (!isActive) return;
+
+        const settings = new Map(
+          (((data as any[]) || [])).map((row) => [row.key, Boolean(row.value_bool)]),
+        );
+
+        setRequireRiderSubscription(settings.get("require_rider_subscription") ?? false);
+        setRequireBusOperatorSubscription(settings.get("require_bus_operator_subscription") ?? true);
+      } finally {
+        if (showLoading && isActive) {
+          setSettingsLoading(false);
+        }
+      }
     };
 
-    loadSettings();
+    void loadSettings(true);
 
-    window.addEventListener("focus", loadSettings);
-    return () => window.removeEventListener("focus", loadSettings);
+    const handleFocus = () => {
+      void loadSettings(false);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      isActive = false;
+      window.removeEventListener("focus", handleFocus);
+    };
   }, [location.pathname]);
 
   if (loading) {
