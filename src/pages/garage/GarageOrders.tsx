@@ -23,22 +23,28 @@ const GarageOrders = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [orders, setOrders] = useState<any[]>([]);
-  const [drivers, setDrivers] = useState<Record<string, any>>({});
+  const [requesters, setRequesters] = useState<Record<string, any>>({});
 
   const fetchOrders = async () => {
     if (!user) return;
-    const { data: garage } = await (supabase as any).from("garages").select("id").eq("owner_id", user.id).maybeSingle();
+    const { data: garage } = await (supabase as any)
+      .from("garages")
+      .select("id")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
     if (!garage?.id) return;
     const { data } = await (supabase as any).from("garage_orders").select("*").eq("garage_id", garage.id).order("created_at", { ascending: false });
     const rows = data || [];
     setOrders(rows);
 
-    const driverIds = [...new Set(rows.map((o: any) => o.driver_id).filter(Boolean))];
-    if (driverIds.length) {
-      const { data: profiles } = await supabase.from("profiles").select("id,full_name,phone").in("id", driverIds);
+    const requesterIds = [...new Set(rows.map((o: any) => o.requester_id || o.driver_id).filter(Boolean))] as string[];
+    if (requesterIds.length) {
+      const { data: profiles } = await supabase.from("profiles").select("id,full_name,phone").in("id", requesterIds);
       const map: Record<string, any> = {};
       (profiles || []).forEach((p: any) => { map[p.id] = p; });
-      setDrivers(map);
+      setRequesters(map);
     }
   };
 
@@ -48,7 +54,13 @@ const GarageOrders = () => {
     if (!user) return;
     let channel: any;
     (async () => {
-      const { data: garage } = await (supabase as any).from("garages").select("id").eq("owner_id", user.id).maybeSingle();
+      const { data: garage } = await (supabase as any)
+        .from("garages")
+        .select("id")
+        .eq("owner_id", user.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
       if (!garage?.id) return;
       channel = supabase
         .channel(`garage-orders-${garage.id}`)
@@ -66,7 +78,7 @@ const GarageOrders = () => {
       completed: [],
     };
     if (!allowed[currentStatus]?.includes(nextStatus)) {
-      toast({ title: "Invalid action", description: `Order already in '${currentStatus.replaceAll("_", " ")}' state.` });
+      toast({ title: "Invalid action", description: `Order already in '${currentStatus.replace(/_/g, " ")}' state.` });
       return;
     }
 
@@ -104,20 +116,23 @@ const GarageOrders = () => {
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">Garage Orders (Realtime)</h2>
       {orders.map((o) => {
-        const driver = drivers[o.driver_id];
-        const previewUrl = mapPreviewUrl(o.driver_lng, o.driver_lat, o.mechanic_lng, o.mechanic_lat);
+        const requesterId = o.requester_id || o.driver_id;
+        const requester = requesters[requesterId];
+        const previewUrl = mapPreviewUrl(o.requester_lng ?? o.driver_lng, o.requester_lat ?? o.driver_lat, o.mechanic_lng, o.mechanic_lat);
         return (
           <Card key={o.id}>
             <CardContent className="p-4 space-y-2">
               <div className="flex items-center justify-between"><p className="font-semibold">Order #{o.id.slice(0, 8)}</p><Badge>{o.status}</Badge></div>
-              <p className="text-sm">Driver location: {o.driver_address || "Not provided"}</p>
-              <p className="text-xs text-muted-foreground">Driver: {driver?.full_name || "Unknown"} • {driver?.phone || "No phone"}</p>
+              <p className="text-sm">Requester location: {o.requester_address || o.driver_address || "Not provided"}</p>
+              <p className="text-xs text-muted-foreground">
+                {o.requester_role === "rider" ? "Rider" : "Driver"}: {requester?.full_name || "Unknown"} • {requester?.phone || "No phone"}
+              </p>
               {o.location_accuracy === "approximate" && <p className="text-xs text-amber-700">Approximate location used (address-based)</p>}
-              {o.status !== "completed" && o.driver_lat && o.driver_lng && previewUrl && (
+              {o.status !== "completed" && (o.requester_lat ?? o.driver_lat) != null && (o.requester_lng ?? o.driver_lng) != null && previewUrl && (
                 <>
                   <img src={previewUrl} alt="Order map" className="w-full rounded-md border" />
-                  <a className="text-xs text-primary underline block" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${o.driver_lat},${o.driver_lng}`}>
-                    Navigate to driver
+                  <a className="text-xs text-primary underline block" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${o.requester_lat ?? o.driver_lat},${o.requester_lng ?? o.driver_lng}`}>
+                    Navigate to requester
                   </a>
                 </>
               )}
@@ -154,12 +169,12 @@ const GarageOrders = () => {
                     Complete
                   </Button>
 
-                  <CallButton phone={driver?.phone} />
+                  <CallButton phone={requester?.phone} />
                   <ChatPanel
                   orderId={o.id}
                   orderType="garage_order"
                   displayNames={{
-                    [o.driver_id]: driver?.full_name || "Driver",
+                    [requesterId]: requester?.full_name || (o.requester_role === "rider" ? "Rider" : "Driver"),
                     [user?.id || ""]: "Garage",
                   }}
                 />

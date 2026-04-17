@@ -26,6 +26,7 @@ const ActiveRideTracker = ({ ride, onCancelled, onCompleted }: ActiveRideTracker
   const [driverProfile, setDriverProfile] = useState<any>(null);
   const [driverDetails, setDriverDetails] = useState<any>(null);
   const [showCancel, setShowCancel] = useState(false);
+  const canCancelRide = ride.status === "pending" || ride.status === "accepted";
 
   useEffect(() => {
     if (ride.driver_id) {
@@ -119,7 +120,7 @@ const ActiveRideTracker = ({ ride, onCancelled, onCompleted }: ActiveRideTracker
       </Card>
 
       {/* Cancel button */}
-      {(ride.status === "pending" || ride.status === "accepted") && (
+      {canCancelRide && (
         <Button variant="outline" className="w-full text-destructive border-destructive/30 hover:bg-destructive/5" onClick={() => setShowCancel(true)}>
           <X className="h-4 w-4 mr-1" /> Cancel Ride
         </Button>
@@ -129,6 +130,7 @@ const ActiveRideTracker = ({ ride, onCancelled, onCompleted }: ActiveRideTracker
         open={showCancel}
         onOpenChange={setShowCancel}
         rideId={ride.id}
+        rideStatus={ride.status}
         onCancelled={onCancelled}
       />
     </div>

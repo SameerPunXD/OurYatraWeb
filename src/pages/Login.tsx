@@ -11,8 +11,21 @@ import { EMAIL_OTP_DIGIT_LABEL, EMAIL_OTP_LENGTH } from "@/lib/authOtp";
 import { CheckCircle2, Eye, EyeOff, MailCheck, RotateCw } from "lucide-react";
 import { rolePathMap } from "@/components/dashboard/sidebarConfig";
 import type { Database } from "@/integrations/supabase/types";
+import { ensureCurrentUserRole } from "@/lib/authRoleSync";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
+
+const getErrorDetails = (error: unknown) => {
+  if (!error || typeof error !== "object") {
+    return { message: undefined, code: undefined };
+  }
+
+  const maybeError = error as { message?: unknown; code?: unknown };
+  return {
+    message: typeof maybeError.message === "string" ? maybeError.message : undefined,
+    code: typeof maybeError.code === "string" ? maybeError.code : undefined,
+  };
+};
 
 const maskEmailAddress = (value: string) => {
   const [local, domain] = value.split("@");
@@ -96,7 +109,16 @@ const Login = () => {
     }
 
     if (roleNames.includes("garage")) {
-      const { data } = await (supabase as any).from("garages").select("id").eq("owner_id", userId).limit(1);
+      const garagesClient = supabase as unknown as {
+        from: (table: string) => {
+          select: (columns: string) => {
+            eq: (column: string, value: string) => {
+              limit: (count: number) => Promise<{ data: Array<{ id: string }> | null }>;
+            };
+          };
+        };
+      };
+      const { data } = await garagesClient.from("garages").select("id").eq("owner_id", userId).limit(1);
       if (!data || data.length === 0) return false;
     }
 
@@ -147,8 +169,18 @@ const Login = () => {
       }
     }
 
-    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
-    if (!roles || roles.length === 0) {
+    let roleRows = (await supabase.from("user_roles").select("role").eq("user_id", user.id)).data || [];
+
+    if (roleRows.length === 0) {
+      try {
+        await ensureCurrentUserRole();
+        roleRows = (await supabase.from("user_roles").select("role").eq("user_id", user.id)).data || [];
+      } catch (error) {
+        console.debug("[Login] failed to sync current user role", error);
+      }
+    }
+
+    if (roleRows.length === 0) {
       toast({
         title: "No role assigned",
         description: "Your account has no role. Contact support.",
@@ -158,7 +190,7 @@ const Login = () => {
       return;
     }
 
-    const roleNames = roles.map((roleRow) => roleRow.role);
+    const roleNames = roleRows.map((roleRow) => roleRow.role);
     const primaryRole = (roleNames.includes("admin") ? "admin" : roleNames[0]) as AppRole;
     const requestedNext = searchParams.get("next");
     const safeNext = requestedNext && requestedNext.startsWith("/") ? requestedNext : null;
@@ -172,7 +204,8 @@ const Login = () => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      const raw = `${(error as any)?.message || ""} ${(error as any)?.code || ""}`.toLowerCase();
+      const authError = getErrorDetails(error);
+      const raw = `${authError.message || ""} ${authError.code || ""}`.toLowerCase();
 
       if (raw.includes("email not confirmed")) {
         setVerificationMode(true);
@@ -232,10 +265,10 @@ const Login = () => {
         title: "Verification code sent",
         description: `Enter the code sent to ${verificationEmail}.`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Could not send code",
-        description: getEmailDeliveryErrorMessage(error),
+        description: getEmailDeliveryErrorMessage(getErrorDetails(error)),
         variant: "destructive",
       });
     } finally {
@@ -279,10 +312,11 @@ const Login = () => {
         description: "Your signup email is verified.",
       });
       await finishAuthenticatedSession();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorDetails = getErrorDetails(error);
       toast({
         title: "Verification failed",
-        description: error.message,
+        description: errorDetails.message || "Could not verify the email code.",
         variant: "destructive",
       });
     } finally {

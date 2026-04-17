@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Upload, Plus, Trash2, Shield } from "lucide-react";
+import { Upload, Plus, Trash2, Shield, Lock } from "lucide-react";
 import RatingDisplay from "@/components/RatingDisplay";
 
 interface EmergencyContact {
@@ -20,6 +20,11 @@ interface EmergencyContact {
 const ProfilePage = () => {
   const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
+  const userMetadata = user?.user_metadata as Record<string, unknown> | undefined;
+  const verifiedAuthPhone = user?.phone?.trim()
+    || (typeof userMetadata?.phone === "string" ? userMetadata.phone.trim() : "");
+  const isVerified = profile?.account_status === "approved";
+  const isPhoneLocked = isVerified || !!verifiedAuthPhone;
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
@@ -39,20 +44,20 @@ const ProfilePage = () => {
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name || "");
-      setPhone(profile.phone || "");
+      setPhone(verifiedAuthPhone || profile.phone || "");
       setCity(profile.city || "");
     }
-  }, [profile]);
+  }, [profile, verifiedAuthPhone]);
 
-  useEffect(() => {
-    if (user) fetchEmergencyContacts();
-  }, [user]);
-
-  const fetchEmergencyContacts = async () => {
+  const fetchEmergencyContacts = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase.from("emergency_contacts").select("*").eq("user_id", user.id);
     setEmergencyContacts(data || []);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (user) fetchEmergencyContacts();
+  }, [user, fetchEmergencyContacts]);
 
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -61,7 +66,11 @@ const ProfilePage = () => {
     e.preventDefault();
     if (!user) return;
     setLoading(true);
-    const { error } = await supabase.from("profiles").update({ full_name: fullName, phone, city }).eq("id", user.id);
+    const nextPhone = isPhoneLocked ? (verifiedAuthPhone || profile?.phone || "").trim() : phone.trim();
+    const { error } = await supabase
+      .from("profiles")
+      .update({ full_name: fullName, phone: nextPhone || null, city })
+      .eq("id", user.id);
     if (error) toast({ title: "Failed", description: error.message, variant: "destructive" });
     else { toast({ title: "Profile updated!" }); await refreshProfile(); }
     setLoading(false);
@@ -144,7 +153,20 @@ const ProfilePage = () => {
             </div>
             <div className="space-y-2">
               <Label>Phone</Label>
-              <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+977 98XXXXXXXX" />
+              <div className="relative">
+                <Input
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  placeholder="+977 98XXXXXXXX"
+                  disabled={isPhoneLocked}
+                />
+                {isPhoneLocked && <Lock className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />}
+              </div>
+              {isPhoneLocked && (
+                <p className="text-xs text-muted-foreground">
+                  Verified phone numbers are locked and cannot be changed from profile.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>City</Label>
@@ -152,7 +174,10 @@ const ProfilePage = () => {
             </div>
             <div className="space-y-2">
               <Label>Email</Label>
-              <Input value={user?.email || ""} disabled />
+              <div className="relative">
+                <Input value={user?.email || ""} disabled />
+                <Lock className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              </div>
             </div>
             <Button type="submit" disabled={loading}>
               {loading ? "Saving..." : "Save Changes"}

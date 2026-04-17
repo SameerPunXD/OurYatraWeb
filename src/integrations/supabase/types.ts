@@ -363,7 +363,7 @@ export type Database = {
         Row: {
           created_at: string
           driver_address: string | null
-          driver_id: string
+          driver_id: string | null
           driver_lat: number | null
           driver_lng: number | null
           garage_id: string
@@ -376,14 +376,21 @@ export type Database = {
           mechanic_updated_at: string | null
           notes: string | null
           payment_method: string | null
+          requester_address: string | null
+          requester_id: string
+          requester_lat: number | null
+          requester_lng: number | null
+          requester_role: Database["public"]["Enums"]["app_role"]
+          service_location_mode: string
           status: string
           total_amount: number
           updated_at: string
+          vehicle_info: string | null
         }
         Insert: {
           created_at?: string
           driver_address?: string | null
-          driver_id: string
+          driver_id?: string | null
           driver_lat?: number | null
           driver_lng?: number | null
           garage_id: string
@@ -396,14 +403,21 @@ export type Database = {
           mechanic_updated_at?: string | null
           notes?: string | null
           payment_method?: string | null
+          requester_address?: string | null
+          requester_id: string
+          requester_lat?: number | null
+          requester_lng?: number | null
+          requester_role: Database["public"]["Enums"]["app_role"]
+          service_location_mode?: string
           status?: string
           total_amount?: number
           updated_at?: string
+          vehicle_info?: string | null
         }
         Update: {
           created_at?: string
           driver_address?: string | null
-          driver_id?: string
+          driver_id?: string | null
           driver_lat?: number | null
           driver_lng?: number | null
           garage_id?: string
@@ -416,9 +430,16 @@ export type Database = {
           mechanic_updated_at?: string | null
           notes?: string | null
           payment_method?: string | null
+          requester_address?: string | null
+          requester_id?: string
+          requester_lat?: number | null
+          requester_lng?: number | null
+          requester_role?: Database["public"]["Enums"]["app_role"]
+          service_location_mode?: string
           status?: string
           total_amount?: number
           updated_at?: string
+          vehicle_info?: string | null
         }
         Relationships: [
           {
@@ -441,6 +462,7 @@ export type Database = {
           name: string
           price: number
           updated_at: string
+          vehicle_category: string
         }
         Insert: {
           created_at?: string
@@ -452,6 +474,7 @@ export type Database = {
           name: string
           price: number
           updated_at?: string
+          vehicle_category?: string
         }
         Update: {
           created_at?: string
@@ -463,6 +486,7 @@ export type Database = {
           name?: string
           price?: number
           updated_at?: string
+          vehicle_category?: string
         }
         Relationships: [
           {

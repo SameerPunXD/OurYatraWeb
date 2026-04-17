@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,33 +13,70 @@ const reasons = [
   "Booked by mistake",
 ];
 
+const CANCELLABLE_RIDE_STATUSES = ["pending", "accepted"];
+
 interface CancelRideDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rideId: string;
+  rideStatus: string;
   onCancelled: () => void;
 }
 
-const CancelRideDialog = ({ open, onOpenChange, rideId, onCancelled }: CancelRideDialogProps) => {
+const CancelRideDialog = ({ open, onOpenChange, rideId, rideStatus, onCancelled }: CancelRideDialogProps) => {
   const { toast } = useToast();
   const [selected, setSelected] = useState("");
   const [otherReason, setOtherReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
 
+  useEffect(() => {
+    if (!open) {
+      setSelected("");
+      setOtherReason("");
+      setCancelling(false);
+    }
+  }, [open]);
+
   const handleCancel = async () => {
     const reason = selected === "Other" ? otherReason : selected;
     if (!reason) return;
+
+    if (!CANCELLABLE_RIDE_STATUSES.includes(rideStatus)) {
+      toast({
+        title: "Ride can no longer be cancelled",
+        description: "Only rides that have not started yet can be cancelled.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setCancelling(true);
-    const { error } = await supabase.from("rides").update({
-      status: "cancelled" as any,
-      cancellation_reason: reason,
-    }).eq("id", rideId).eq("status", "pending");
-    if (error) toast({ title: "Failed", description: error.message, variant: "destructive" });
-    else {
+
+    const { data, error } = await supabase
+      .from("rides")
+      .update({
+        status: "cancelled" as any,
+        cancellation_reason: reason,
+      })
+      .eq("id", rideId)
+      .in("status", CANCELLABLE_RIDE_STATUSES)
+      .select("id, status")
+      .maybeSingle();
+
+    if (error) {
+      toast({ title: "Failed", description: error.message, variant: "destructive" });
+    } else if (!data) {
+      toast({
+        title: "Ride can no longer be cancelled",
+        description: "This ride was already updated, so the cancellation did not go through.",
+        variant: "destructive",
+      });
+    } else {
       toast({ title: "Ride cancelled" });
       onOpenChange(false);
       onCancelled();
     }
+
     setCancelling(false);
   };
 

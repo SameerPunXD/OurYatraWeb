@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,16 @@ const BookRide = () => {
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
   const [matchingDebug, setMatchingDebug] = useState<MatchingDebugState | null>(null);
   const activeDriverLocation = useDriverLiveLocation(activeRide?.driver_id ?? null);
+  const activeRideStatusRef = useRef<string | null>(null);
+  const bookingStateRef = useRef<BookingState>("selecting");
+
+  useEffect(() => {
+    activeRideStatusRef.current = activeRide?.status ?? null;
+  }, [activeRide]);
+
+  useEffect(() => {
+    bookingStateRef.current = state;
+  }, [state]);
 
   // Auto-detect location (GPS first, then IP fallback)
   useEffect(() => {
@@ -146,26 +156,51 @@ const BookRide = () => {
   }, [user]);
 
   // Realtime subscription
+  const handleRideUpdate = useCallback((updatedRide: any) => {
+    const previousStatus = activeRideStatusRef.current;
+    const currentState = bookingStateRef.current;
+
+    if (
+      (updatedRide.status === "cancelled" || updatedRide.status === "completed")
+      && currentState !== "searching"
+      && currentState !== "active"
+    ) {
+      return;
+    }
+
+    setActiveRide(updatedRide);
+
+    if (updatedRide.status === "pending") {
+      setState("searching");
+      return;
+    }
+
+    if (updatedRide.status === "accepted") {
+      setState("active");
+      if (previousStatus !== "accepted") {
+        toast({ title: "Driver found!", description: "Your driver is on the way." });
+      }
+      return;
+    }
+
+    if (updatedRide.status === "in_progress") {
+      setState("active");
+      if (previousStatus !== "in_progress") {
+        toast({ title: "Trip started!", description: "Enjoy your ride." });
+      }
+    }
+  }, [toast]);
+
   useEffect(() => {
     if (!user) return;
     const channel = supabase.channel("ride-booking")
       .on("postgres_changes", { event: "*", schema: "public", table: "rides", filter: `rider_id=eq.${user.id}` }, (payload) => {
         if (payload.eventType === "UPDATE") {
-          const updated = payload.new as any;
-          if (["pending", "accepted", "in_progress"].includes(updated.status)) {
-            setActiveRide(updated);
-            if (updated.status === "accepted") {
-              setState("active");
-              toast({ title: "Driver found!", description: "Your driver is on the way." });
-            }
-            if (updated.status === "in_progress") {
-              toast({ title: "Trip started!", description: "Enjoy your ride." });
-            }
-          }
+          handleRideUpdate(payload.new as any);
         }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [toast, user]);
+  }, [handleRideUpdate, user]);
 
   const dispatchNextRideCandidate = useCallback(async (ride: any) => {
     if (!ride?.id || ride?.status !== "pending" || !ride.pickup_lat || !ride.pickup_lng) {

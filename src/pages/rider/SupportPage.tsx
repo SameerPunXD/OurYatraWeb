@@ -4,7 +4,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 
 const faqs = [
   { q: "How do I book a ride?", a: "Go to 'Book Ride' from the sidebar or dashboard, enter your pickup and drop-off locations, choose a vehicle type, and tap 'Book Now'. We'll match you with the nearest driver." },
-  { q: "How do I cancel a ride?", a: "You can cancel a ride while it's still pending by tapping the 'Cancel' button on the ride card. Once a driver has accepted, cancellation may incur a fee." },
+  { q: "How do I cancel a ride?", a: "You can cancel a ride from the ride card until the trip starts. If a driver has already accepted, cancellation may incur a fee." },
   { q: "How does parcel delivery work?", a: "Go to 'Send Parcel', fill in pickup/drop-off details, recipient info, and package description. A driver will pick up and deliver your parcel." },
   { q: "What payment methods are accepted?", a: "Currently OurYatra supports cash payments. Digital payment integration is coming soon." },
   { q: "How do I update my profile?", a: "Go to the 'Profile' section in the sidebar to update your name, phone number, profile photo, and emergency contacts." },

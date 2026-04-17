@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 type SignupRole = "rider" | "rider_partner" | "driver" | "auto_driver" | "restaurant" | "garage";
+type BaseRole = "rider" | "driver" | "restaurant" | "garage" | "admin" | "bus_operator";
 
 interface DriverProfilePayload {
   vehicleType: string;
@@ -62,6 +63,50 @@ const normalizeVehicleType = (value: string) => {
   return value.trim();
 };
 
+const normalizeRoleValue = (value: unknown) =>
+  typeof value === "string" ? value.trim().toLowerCase() : "";
+
+const normalizeRequestedRole = (
+  rawRole: unknown,
+  rawRequestedRole: unknown,
+): SignupRole | BaseRole => {
+  const requestedRole = normalizeRoleValue(rawRequestedRole);
+  const role = normalizeRoleValue(rawRole);
+
+  if (requestedRole === "user") return "rider";
+  if (["rider_partner", "auto_driver", "rider", "driver", "restaurant", "garage", "admin", "bus_operator"].includes(requestedRole)) {
+    return requestedRole as SignupRole | BaseRole;
+  }
+
+  if (role === "user") return "rider";
+  if (["rider_partner", "auto_driver", "rider", "driver", "restaurant", "garage", "admin", "bus_operator"].includes(role)) {
+    return role as SignupRole | BaseRole;
+  }
+
+  return "rider";
+};
+
+const normalizeBaseRole = (rawRole: unknown, rawRequestedRole: unknown): BaseRole => {
+  const role = normalizeRoleValue(rawRole);
+  const requestedRole = normalizeRequestedRole(rawRole, rawRequestedRole);
+
+  if (role === "user") return "rider";
+  if (role === "rider_partner" || role === "auto_driver") return "driver";
+  if (["rider", "driver", "restaurant", "garage", "admin", "bus_operator"].includes(role)) {
+    return role as BaseRole;
+  }
+
+  if (requestedRole === "rider_partner" || requestedRole === "auto_driver") {
+    return "driver";
+  }
+
+  if (["rider", "driver", "restaurant", "garage", "admin", "bus_operator"].includes(requestedRole)) {
+    return requestedRole as BaseRole;
+  }
+
+  return "rider";
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -94,15 +139,34 @@ serve(async (req) => {
     }
 
     const payload = (await req.json()) as FinalizeSignupPayload;
-    const requestedRole = String(
-      user.user_metadata?.requested_role || user.user_metadata?.role || "rider",
-    ) as SignupRole;
-    const baseRole = String(
-      user.user_metadata?.role || (requestedRole === "auto_driver" || requestedRole === "rider_partner" ? "driver" : requestedRole),
+    const requestedRole = normalizeRequestedRole(
+      user.user_metadata?.role,
+      user.user_metadata?.requested_role,
+    );
+    const baseRole = normalizeBaseRole(
+      user.user_metadata?.role,
+      user.user_metadata?.requested_role,
     );
 
     if (!["rider", "driver", "restaurant", "garage"].includes(baseRole)) {
       throw new Error("Unsupported signup role");
+    }
+
+    if (
+      user.user_metadata?.role !== baseRole
+      || user.user_metadata?.requested_role !== requestedRole
+    ) {
+      const { error: metadataError } = await adminClient.auth.admin.updateUserById(user.id, {
+        user_metadata: {
+          ...user.user_metadata,
+          role: baseRole,
+          requested_role: requestedRole,
+        },
+      });
+
+      if (metadataError) {
+        throw metadataError;
+      }
     }
 
     const fullName = normalizeText(payload.fullName) || normalizeText(String(user.user_metadata?.full_name || "")) || "";

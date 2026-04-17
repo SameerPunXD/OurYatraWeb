@@ -93,11 +93,12 @@ const ChatPanel = ({ orderId, orderType, displayNames = {} }: ChatPanelProps) =>
       } else if (orderType === "garage_order") {
         const { data } = await (supabase as any)
           .from("garage_orders")
-          .select("driver_id, garages(owner_id)")
+          .select("requester_id, driver_id, garages(owner_id)")
           .eq("id", orderId)
           .maybeSingle();
         const ownerId = data?.garages?.owner_id;
-        recipientIds = [data?.driver_id, ownerId].filter((id: any) => !!id && id !== user.id);
+        const requesterId = data?.requester_id || data?.driver_id;
+        recipientIds = [requesterId, ownerId].filter((id: any) => !!id && id !== user.id);
       }
 
       for (const rid of [...new Set(recipientIds)]) {

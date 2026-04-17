@@ -26,10 +26,12 @@ const DriverGarage = () => {
   const [selectedGarageId, setSelectedGarageId] = useState<string | null>(null);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
+  const [vehicleInfo, setVehicleInfo] = useState("");
   const [driverAddress, setDriverAddress] = useState("");
   const [driverLat, setDriverLat] = useState<number | null>(null);
   const [driverLng, setDriverLng] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [serviceLocationMode, setServiceLocationMode] = useState<"drop_off" | "pickup">("drop_off");
   const [locationAccuracy, setLocationAccuracy] = useState<"exact" | "approximate">("exact");
   const [submitting, setSubmitting] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
@@ -38,14 +40,19 @@ const DriverGarage = () => {
   const [searchResults, setSearchResults] = useState<GooglePlaceSuggestion[]>([]);
   const [mapError, setMapError] = useState<string | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
-  const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null);
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const clickListenerRef = useRef<any>(null);
 
   const fetchData = async () => {
     const [gRes, sRes] = await Promise.all([
       (supabase as any).from("garages").select("*").eq("is_open", true).order("created_at", { ascending: false }),
-      (supabase as any).from("garage_services").select("*").eq("is_available", true).order("created_at", { ascending: false }),
+      (supabase as any)
+        .from("garage_services")
+        .select("*")
+        .eq("is_available", true)
+        .in("vehicle_category", ["four_wheeler", "both"])
+        .order("created_at", { ascending: false }),
     ]);
     setGarages(gRes.data || []);
     setServices(sRes.data || []);
@@ -110,7 +117,8 @@ const DriverGarage = () => {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !window.google?.maps) {
+    const googleApi = (window as any).google;
+    if (!map || !googleApi?.maps) {
       return;
     }
 
@@ -124,7 +132,7 @@ const DriverGarage = () => {
     const position = { lat: driverLat, lng: driverLng };
 
     if (!markerRef.current) {
-      markerRef.current = new google.maps.Marker({
+      markerRef.current = new googleApi.maps.Marker({
         map,
         position,
         title: "Driver location",
@@ -251,6 +259,11 @@ const DriverGarage = () => {
 
       const { error } = await (supabase as any).from("garage_orders").insert({
         garage_id: selectedGarageId,
+        requester_id: user.id,
+        requester_role: "driver",
+        requester_address: driverAddress,
+        requester_lat: driverLat,
+        requester_lng: driverLng,
         driver_id: user.id,
         items: selectedItems,
         notes: notes || null,
@@ -261,6 +274,8 @@ const DriverGarage = () => {
         driver_lat: driverLat,
         driver_lng: driverLng,
         location_accuracy: locationAccuracy,
+        vehicle_info: vehicleInfo || null,
+        service_location_mode: serviceLocationMode,
       });
 
       if (error) throw error;
@@ -268,6 +283,7 @@ const DriverGarage = () => {
       toast({ title: "Order placed", description: "Garage can now see your location." });
       setSelectedServiceIds([]);
       setNotes("");
+      setVehicleInfo("");
       setSearchQuery("");
       setSearchResults([]);
     } catch (error: any) {
@@ -388,6 +404,25 @@ const DriverGarage = () => {
                   </p>
 
                   <Input placeholder="Notes (optional)" value={notes} onChange={(event) => setNotes(event.target.value)} />
+                  <Input placeholder="Vehicle details (model / plate)" value={vehicleInfo} onChange={(event) => setVehicleInfo(event.target.value)} />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant={serviceLocationMode === "drop_off" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setServiceLocationMode("drop_off")}
+                    >
+                      Drop at Garage
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={serviceLocationMode === "pickup" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setServiceLocationMode("pickup")}
+                    >
+                      Pickup from my location
+                    </Button>
+                  </div>
                   <div className="flex gap-2">
                     <Button type="button" variant={paymentMethod === "cash" ? "default" : "outline"} size="sm" onClick={() => setPaymentMethod("cash")}>
                       Cash

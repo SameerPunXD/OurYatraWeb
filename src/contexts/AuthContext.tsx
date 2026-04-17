@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode, useCallback 
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { ensureCurrentUserRole } from "@/lib/authRoleSync";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 
@@ -39,28 +40,54 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [activeRole, setActiveRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserData = async (userId: string) => {
+  const fetchUserData = useCallback(async (userId: string) => {
     const [profileRes, rolesRes] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", userId).single(),
       supabase.from("user_roles").select("role").eq("user_id", userId),
     ]);
 
     if (profileRes.data) setProfile(profileRes.data);
-    if (rolesRes.data) {
-      const userRoles = rolesRes.data.map((r) => r.role);
-      setRoles(userRoles);
-      if (!activeRole && userRoles.length > 0) {
-        const saved = localStorage.getItem("ouryatra_active_role") as AppRole | null;
-        // Prioritize admin role if user has it
-        const defaultRole = userRoles.includes("admin") ? "admin" : userRoles[0];
-        setActiveRole(saved && userRoles.includes(saved) ? saved : defaultRole);
+
+    let roleRows = rolesRes.data ?? [];
+
+    if (roleRows.length === 0) {
+      try {
+        await ensureCurrentUserRole();
+        const { data: repairedRoles } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userId);
+
+        roleRows = repairedRoles ?? [];
+      } catch (error) {
+        console.debug("[Auth] failed to sync current user role", error);
       }
     }
-  };
+
+    const userRoles = roleRows.map((roleRow) => roleRow.role);
+    setRoles(userRoles);
+
+    if (userRoles.length === 0) {
+      setActiveRole(null);
+      localStorage.removeItem("ouryatra_active_role");
+      return;
+    }
+
+    const saved = localStorage.getItem("ouryatra_active_role") as AppRole | null;
+    const nextRole =
+      (saved && userRoles.includes(saved) ? saved : null)
+      || (activeRole && userRoles.includes(activeRole) ? activeRole : null)
+      || (userRoles.includes("admin") ? "admin" : userRoles[0]);
+
+    if (nextRole !== activeRole) {
+      setActiveRole(nextRole);
+      localStorage.setItem("ouryatra_active_role", nextRole);
+    }
+  }, [activeRole]);
 
   const refreshProfile = useCallback(async () => {
     if (user) await fetchUserData(user.id);
-  }, [user]);
+  }, [fetchUserData, user]);
 
   const handleSetActiveRole = (role: AppRole) => {
     setActiveRole(role);
@@ -93,12 +120,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [fetchUserData]);
 
   const signOut = async () => {
     if (user && (roles.includes("driver") || activeRole === "driver")) {
       try {
-        await (supabase as any).rpc("remove_driver_from_pending_rides");
+        const rpc = supabase.rpc as unknown as (
+          fn: string,
+        ) => Promise<{ data: unknown; error: unknown }>;
+        await rpc("remove_driver_from_pending_rides");
       } catch (error) {
         console.debug("[Auth] failed to remove driver from pending rides during sign-out", error);
       }

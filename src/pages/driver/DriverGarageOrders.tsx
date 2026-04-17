@@ -18,13 +18,14 @@ const DriverGarageOrders = () => {
     const { data } = await (supabase as any)
       .from("garage_orders")
       .select("*, garages(name,address,phone,owner_id)")
-      .eq("driver_id", user.id)
+      .eq("requester_id", user.id)
+      .eq("requester_role", "driver")
       .order("created_at", { ascending: false });
 
     const rows = data || [];
     setOrders(rows);
 
-    const ownerIds = [...new Set(rows.map((o: any) => o.garages?.owner_id).filter(Boolean))];
+    const ownerIds = [...new Set(rows.map((o: any) => o.garages?.owner_id).filter(Boolean))] as string[];
     if (ownerIds.length) {
       const { data: profiles } = await supabase.from("profiles").select("id,full_name,phone").in("id", ownerIds);
       const map: Record<string, any> = {};
@@ -39,7 +40,7 @@ const DriverGarageOrders = () => {
     if (!user) return;
     const channel = supabase
       .channel(`garage-orders-driver-${user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "garage_orders", filter: `driver_id=eq.${user.id}` }, () => fetchOrders())
+      .on("postgres_changes", { event: "*", schema: "public", table: "garage_orders", filter: `requester_id=eq.${user.id}` }, () => fetchOrders())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user]);
@@ -57,20 +58,20 @@ const DriverGarageOrders = () => {
           <Card key={o.id}>
             <CardContent className="p-4 space-y-2">
               <div className="flex items-center justify-between"><p className="font-semibold">{o.garages?.name || "Garage"}</p><Badge>{o.status}</Badge></div>
-              <p className="text-sm text-muted-foreground">{o.driver_address || o.garages?.address}</p>
+              <p className="text-sm text-muted-foreground">{o.requester_address || o.driver_address || o.garages?.address}</p>
               <p className="text-xs text-muted-foreground">Garage contact: {owner?.full_name || "Garage Owner"} • {owner?.phone || o.garages?.phone || "No phone"}</p>
               {o.mechanic_lat && o.mechanic_lng && (
                 <a className="text-xs text-primary underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${o.mechanic_lat},${o.mechanic_lng}`}>
                   View mechanic live location
                 </a>
               )}
-              {o.driver_lat && o.driver_lng && (
-                <a className="text-xs text-primary underline block" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${o.driver_lat},${o.driver_lng}`}>
+              {(o.requester_lat ?? o.driver_lat) != null && (o.requester_lng ?? o.driver_lng) != null && (
+                <a className="text-xs text-primary underline block" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${o.requester_lat ?? o.driver_lat},${o.requester_lng ?? o.driver_lng}`}>
                   Open my pinned location
                 </a>
               )}
               <div className="grid grid-cols-4 gap-1">{ORDER_STEPS.map((s, i) => <div key={s} className={`h-1.5 rounded-full ${i <= stepIndex(o.status) ? "bg-primary" : "bg-muted"}`} />)}</div>
-              <p className="text-xs text-muted-foreground capitalize">{String(o.status || "").replaceAll("_", " ")}</p>
+              <p className="text-xs text-muted-foreground capitalize">{String(o.status || "").replace(/_/g, " ")}</p>
               <p className="text-sm">Total: Rs {o.total_amount}</p>
               <p className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString()}</p>
               <div className="flex gap-2 flex-wrap">
@@ -79,7 +80,7 @@ const DriverGarageOrders = () => {
                   orderId={o.id}
                   orderType="garage_order"
                   displayNames={{
-                    [o.driver_id]: "Driver",
+                    [o.requester_id || o.driver_id]: "Driver",
                     [o.garages?.owner_id]: owner?.full_name || "Garage",
                   }}
                 />
