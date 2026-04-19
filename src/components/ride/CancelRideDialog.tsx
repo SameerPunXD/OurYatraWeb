@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import type { Database } from "@/integrations/supabase/types";
 
 const reasons = [
   "Changed my plans",
@@ -13,13 +14,15 @@ const reasons = [
   "Booked by mistake",
 ];
 
-const CANCELLABLE_RIDE_STATUSES = ["pending", "accepted"];
+type RideStatus = Database["public"]["Enums"]["ride_status"];
+
+const CANCELLABLE_RIDE_STATUSES: RideStatus[] = ["pending", "accepted"];
 
 interface CancelRideDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rideId: string;
-  rideStatus: string;
+  rideStatus: RideStatus;
   onCancelled: () => void;
 }
 

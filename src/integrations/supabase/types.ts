@@ -32,6 +32,41 @@ export type Database = {
         }
         Relationships: []
       }
+      broadcast_messages: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          message: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          message: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          message?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broadcast_messages_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bus_bookings: {
         Row: {
           bus_id: string
@@ -193,6 +228,45 @@ export type Database = {
           is_active?: boolean
           label?: string
           slug?: string
+        }
+        Relationships: []
+      }
+      delivery_verification_codes: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          invalidated_at: string | null
+          order_id: string
+          owner_user_id: string
+          target: Database["public"]["Enums"]["delivery_verification_target"]
+          updated_at: string
+          verified_at: string | null
+          verified_by_user_id: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          invalidated_at?: string | null
+          order_id: string
+          owner_user_id: string
+          target: Database["public"]["Enums"]["delivery_verification_target"]
+          updated_at?: string
+          verified_at?: string | null
+          verified_by_user_id?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          invalidated_at?: string | null
+          order_id?: string
+          owner_user_id?: string
+          target?: Database["public"]["Enums"]["delivery_verification_target"]
+          updated_at?: string
+          verified_at?: string | null
+          verified_by_user_id?: string | null
         }
         Relationships: []
       }
@@ -537,6 +611,44 @@ export type Database = {
         }
         Relationships: []
       }
+      inbox_read_states: {
+        Row: {
+          created_at: string
+          id: string
+          inbox_id: string
+          inbox_type: string
+          last_read_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          inbox_id: string
+          inbox_type: string
+          last_read_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          inbox_id?: string
+          inbox_type?: string
+          last_read_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inbox_read_states_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       menu_items: {
         Row: {
           category: string | null
@@ -692,6 +804,63 @@ export type Database = {
         }
         Relationships: []
       }
+      phone_otp_codes: {
+        Row: {
+          attempt_count: number
+          code_hash: string
+          created_at: string
+          expires_at: string
+          id: string
+          invalidated_at: string | null
+          last_sent_at: string
+          max_attempts: number
+          phone_e164: string
+          phone_local: string
+          provider: string
+          provider_message_id: string | null
+          provider_response: Json
+          purpose: string
+          updated_at: string
+          verified_at: string | null
+        }
+        Insert: {
+          attempt_count?: number
+          code_hash: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          invalidated_at?: string | null
+          last_sent_at?: string
+          max_attempts?: number
+          phone_e164: string
+          phone_local: string
+          provider?: string
+          provider_message_id?: string | null
+          provider_response?: Json
+          purpose: string
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Update: {
+          attempt_count?: number
+          code_hash?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          invalidated_at?: string | null
+          last_sent_at?: string
+          max_attempts?: number
+          phone_e164?: string
+          phone_local?: string
+          provider?: string
+          provider_message_id?: string | null
+          provider_response?: Json
+          purpose?: string
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           account_status: Database["public"]["Enums"]["account_status"]
@@ -728,6 +897,45 @@ export type Database = {
           is_flagged?: boolean
           phone?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      push_devices: {
+        Row: {
+          app_build: string | null
+          created_at: string
+          device_label: string | null
+          expo_push_token: string
+          id: string
+          is_active: boolean
+          last_seen_at: string
+          platform: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          app_build?: string | null
+          created_at?: string
+          device_label?: string | null
+          expo_push_token: string
+          id?: string
+          is_active?: boolean
+          last_seen_at?: string
+          platform: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          app_build?: string | null
+          created_at?: string
+          device_label?: string | null
+          expo_push_token?: string
+          id?: string
+          is_active?: boolean
+          last_seen_at?: string
+          platform?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -774,6 +982,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      rental_orders: {
+        Row: {
+          created_at: string
+          customer_note: string | null
+          dropoff_location: string
+          duration_days: number
+          id: string
+          operator_id: string | null
+          operator_note: string | null
+          pickup_date: string
+          pickup_location: string
+          price_per_day: number
+          price_per_hour: number
+          service_mode: string
+          status: string
+          trip_type: string
+          updated_at: string
+          user_id: string
+          vehicle_category: string
+          vehicle_id: string
+          vehicle_name: string
+        }
+        Insert: {
+          created_at?: string
+          customer_note?: string | null
+          dropoff_location: string
+          duration_days: number
+          id?: string
+          operator_id?: string | null
+          operator_note?: string | null
+          pickup_date: string
+          pickup_location: string
+          price_per_day: number
+          price_per_hour: number
+          service_mode: string
+          status?: string
+          trip_type: string
+          updated_at?: string
+          user_id: string
+          vehicle_category: string
+          vehicle_id: string
+          vehicle_name: string
+        }
+        Update: {
+          created_at?: string
+          customer_note?: string | null
+          dropoff_location?: string
+          duration_days?: number
+          id?: string
+          operator_id?: string | null
+          operator_note?: string | null
+          pickup_date?: string
+          pickup_location?: string
+          price_per_day?: number
+          price_per_hour?: number
+          service_mode?: string
+          status?: string
+          trip_type?: string
+          updated_at?: string
+          user_id?: string
+          vehicle_category?: string
+          vehicle_id?: string
+          vehicle_name?: string
+        }
+        Relationships: []
       }
       restaurants: {
         Row: {
@@ -891,10 +1165,15 @@ export type Database = {
           fare: number | null
           id: string
           notes: string | null
+          parcel_description: string | null
+          parcel_size: string | null
           pickup_h3_r9: string | null
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_location: string
+          recipient_name: string | null
+          recipient_phone: string | null
+          ride_type: string
           rider_id: string
           scheduled_at: string | null
           started_at: string | null
@@ -915,10 +1194,15 @@ export type Database = {
           fare?: number | null
           id?: string
           notes?: string | null
+          parcel_description?: string | null
+          parcel_size?: string | null
           pickup_h3_r9?: string | null
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location: string
+          recipient_name?: string | null
+          recipient_phone?: string | null
+          ride_type?: string
           rider_id: string
           scheduled_at?: string | null
           started_at?: string | null
@@ -939,10 +1223,15 @@ export type Database = {
           fare?: number | null
           id?: string
           notes?: string | null
+          parcel_description?: string | null
+          parcel_size?: string | null
           pickup_h3_r9?: string | null
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location?: string
+          recipient_name?: string | null
+          recipient_phone?: string | null
+          ride_type?: string
           rider_id?: string
           scheduled_at?: string | null
           started_at?: string | null
@@ -951,6 +1240,38 @@ export type Database = {
           vehicle_type?: string | null
         }
         Relationships: []
+      }
+      safalta_ai_messages: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safalta_ai_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       saved_addresses: {
         Row: {
@@ -1196,16 +1517,63 @@ export type Database = {
         Returns: string
       }
       claim_ride: { Args: { p_ride_id: string }; Returns: Json }
+      deactivate_push_device: {
+        Args: { p_expo_push_token: string }
+        Returns: boolean
+      }
+      default_account_status_for_role: {
+        Args: { _role: Database["public"]["Enums"]["app_role"] }
+        Returns: Database["public"]["Enums"]["account_status"]
+      }
+      dispatch_ride_driver_candidates: {
+        Args: {
+          p_driver_ids: string[]
+          p_offer_window_seconds?: number
+          p_ride_id: string
+        }
+        Returns: Json
+      }
       enqueue_driver_for_pending_rides: {
         Args: { p_h3_cells: string[] }
         Returns: number
       }
+      ensure_current_user_role: {
+        Args: never
+        Returns: {
+          ensured_role: Database["public"]["Enums"]["app_role"]
+          role_was_inserted: boolean
+        }[]
+      }
+      ensure_delivery_verification_code: {
+        Args: {
+          p_order_id: string
+          p_owner_user_id: string
+          p_target: Database["public"]["Enums"]["delivery_verification_target"]
+        }
+        Returns: undefined
+      }
+      generate_delivery_verification_code: { Args: never; Returns: string }
       get_bus_reserved_seats: { Args: { _bus_id: string }; Returns: string[] }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      invalidate_delivery_verification_code: {
+        Args: {
+          p_order_id: string
+          p_target: Database["public"]["Enums"]["delivery_verification_target"]
+        }
+        Returns: undefined
+      }
+      is_driver_targeted_for_ride: {
+        Args: { p_driver_id?: string; p_ride_id: string }
+        Returns: boolean
+      }
+      is_ride_owned_by_user: {
+        Args: { p_ride_id: string; p_user_id?: string }
         Returns: boolean
       }
       match_nearby_drivers: {
@@ -1225,6 +1593,14 @@ export type Database = {
           vehicle_type: string
         }[]
       }
+      normalize_requested_signup_role: {
+        Args: { _raw_role: string; _requested_role?: string }
+        Returns: string
+      }
+      normalize_signup_base_role: {
+        Args: { _raw_role: string; _requested_role?: string }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
       notify_user: {
         Args: {
           _message: string
@@ -1240,8 +1616,49 @@ export type Database = {
         Args: { p_driver_ids: string[]; p_ride_id: string }
         Returns: Json
       }
+      require_verified_delivery_code: {
+        Args: {
+          p_order_id: string
+          p_target: Database["public"]["Enums"]["delivery_verification_target"]
+        }
+        Returns: undefined
+      }
       sync_driver_pending_rides: {
         Args: { p_h3_cells: string[] }
+        Returns: Json
+      }
+      upsert_push_device: {
+        Args: {
+          p_app_build?: string
+          p_device_label?: string
+          p_expo_push_token: string
+          p_platform: string
+        }
+        Returns: {
+          app_build: string | null
+          created_at: string
+          device_label: string | null
+          expo_push_token: string
+          id: string
+          is_active: boolean
+          last_seen_at: string
+          platform: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "push_devices"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      verify_delivery_completion: {
+        Args: {
+          p_code: string
+          p_order_id: string
+          p_target: Database["public"]["Enums"]["delivery_verification_target"]
+        }
         Returns: Json
       }
     }
@@ -1254,6 +1671,10 @@ export type Database = {
         | "admin"
         | "garage"
         | "bus_operator"
+      delivery_verification_target:
+        | "food_order"
+        | "parcel_ride"
+        | "parcel_order"
       food_order_status:
         | "pending"
         | "confirmed"
@@ -1415,6 +1836,11 @@ export const Constants = {
         "admin",
         "garage",
         "bus_operator",
+      ],
+      delivery_verification_target: [
+        "food_order",
+        "parcel_ride",
+        "parcel_order",
       ],
       food_order_status: [
         "pending",

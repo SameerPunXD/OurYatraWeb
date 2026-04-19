@@ -125,7 +125,7 @@ const RiderHistory = () => {
       { label: "Package Type", value: (r.package_type || "parcel").replace(/_/g, " ") },
       { label: "Weight", value: r.weight_kg ? `${r.weight_kg} kg` : null },
       { label: "Delivery Charge", value: r.fare ? `Rs ${r.fare}` : null },
-      { label: "OTP Verified", value: ["delivered", "otp_verified"].includes(r.status) ? "Yes" : "No" },
+      { label: "Delivery Code Verified", value: ["delivered", "otp_verified"].includes(r.status) ? "Yes" : "No" },
       { label: "Status", value: r.status?.replace(/_/g, " ") },
       { label: "Date", value: format(new Date(r.created_at), "MMM d, yyyy h:mm a") },
     ];

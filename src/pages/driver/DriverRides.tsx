@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Car } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import DeliveryVerificationDialog from "@/components/delivery/DeliveryVerificationDialog";
 import type { Database } from "@/integrations/supabase/types";
 import RatingDialog from "@/components/RatingDialog";
 import ChatPanel from "@/components/ChatPanel";
@@ -33,6 +34,7 @@ const DriverRides = () => {
   const [ratedIds, setRatedIds] = useState<Set<string>>(new Set());
   const [riderPhones, setRiderPhones] = useState<Record<string, string>>({});
   const [riderNames, setRiderNames] = useState<Record<string, string>>({});
+  const [verificationRide, setVerificationRide] = useState<any>(null);
   const myDriverLocation = useDriverLiveLocation(user?.id ?? null);
 
   const fetchRides = async () => {
@@ -94,6 +96,12 @@ const DriverRides = () => {
 
   const updateStatus = async (rideId: string, status: RideStatus) => {
     const ride = myRides.find(r => r.id === rideId);
+
+    if (status === "completed" && ride?.ride_type === "parcel") {
+      setVerificationRide(ride);
+      return;
+    }
+
     const updates: Record<string, any> = { status };
     if (status === "in_progress") updates.started_at = new Date().toISOString();
     if (status === "completed") updates.completed_at = new Date().toISOString();
@@ -218,6 +226,27 @@ const DriverRides = () => {
           title="Rate the user"
         />
       )}
+
+      <DeliveryVerificationDialog
+        description="Enter the 6-digit delivery code provided by the customer to complete this parcel delivery."
+        onOpenChange={(open) => { if (!open) setVerificationRide(null); }}
+        onVerified={async () => {
+          if (verificationRide?.rider_id) {
+            await supabase.rpc("notify_user", {
+              _user_id: verificationRide.rider_id,
+              _title: "Parcel Delivered!",
+              _message: "Your parcel delivery has been completed.",
+              _type: "parcel",
+            });
+          }
+          setVerificationRide(null);
+          await fetchRides();
+        }}
+        open={!!verificationRide}
+        orderId={verificationRide?.id || ""}
+        target="parcel_ride"
+        title="Parcel Delivery Verification"
+      />
     </div>
   );
 };

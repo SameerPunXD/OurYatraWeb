@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import CallButton from "@/components/CallButton";
+import DeliveryVerificationDialog from "@/components/delivery/DeliveryVerificationDialog";
 import RatingDialog from "@/components/RatingDialog";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -44,6 +45,7 @@ const DriverFoodDeliveries = () => {
   const [ratingOrder, setRatingOrder] = useState<FoodOrderWithRestaurant | null>(null);
   const [ratedIds, setRatedIds] = useState<Set<string>>(new Set());
   const [customerProfiles, setCustomerProfiles] = useState<Record<string, { full_name?: string; phone?: string }>>({});
+  const [verificationOrderId, setVerificationOrderId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -127,14 +129,17 @@ const DriverFoodDeliveries = () => {
   };
 
   const updateStatus = async (id: string, status: FoodOrderStatus) => {
+    if (status === "delivered") {
+      setVerificationOrderId(id);
+      return;
+    }
+
     const updates: Record<string, any> = { status };
-    if (status === "delivered") updates.delivered_at = new Date().toISOString();
     const { error } = await supabase.from("food_orders").update(updates).eq("id", id);
     if (error) toast({ title: "Failed", description: error.message, variant: "destructive" });
     else {
-      if (active?.customer_id) {
-        if (status === "on_the_way") supabase.rpc("notify_user", { _user_id: active.customer_id, _title: "On the Way!", _message: "Your food order is on the way.", _type: "food" });
-        if (status === "delivered") supabase.rpc("notify_user", { _user_id: active.customer_id, _title: "Order Delivered!", _message: "Your food order has been delivered. Enjoy your meal!", _type: "food" });
+      if (active?.customer_id && status === "on_the_way") {
+        supabase.rpc("notify_user", { _user_id: active.customer_id, _title: "On the Way!", _message: "Your food order is on the way.", _type: "food" });
       }
       fetchData();
     }
@@ -271,6 +276,26 @@ const DriverFoodDeliveries = () => {
           title="Rate the customer"
         />
       )}
+
+      <DeliveryVerificationDialog
+        description="Enter the 6-digit delivery code provided by the customer to complete this food order."
+        onOpenChange={(open) => { if (!open) setVerificationOrderId(null); }}
+        onVerified={async () => {
+          if (active?.customer_id) {
+            await supabase.rpc("notify_user", {
+              _user_id: active.customer_id,
+              _title: "Order Delivered!",
+              _message: "Your food order has been delivered. Enjoy your meal!",
+              _type: "food",
+            });
+          }
+          await fetchData();
+        }}
+        open={!!verificationOrderId}
+        orderId={verificationOrderId || ""}
+        target="food_order"
+        title="Food Delivery Verification"
+      />
     </div>
   );
 };

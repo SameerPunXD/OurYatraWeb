@@ -11,8 +11,16 @@ const AdminGarages = () => {
 
   const run = async () => {
     const { data: garages } = await (supabase as any).from("garages").select("*").order("created_at", { ascending: false });
-    const ownerIds = [...new Set((garages || []).map((g: any) => g.owner_id))];
-    const garageIds = (garages || []).map((g: any) => g.id);
+    const ownerIds: string[] = Array.from(
+      new Set(
+        (garages || [])
+          .map((g: any) => g.owner_id)
+          .filter((ownerId: unknown): ownerId is string => typeof ownerId === "string" && ownerId.length > 0),
+      ),
+    );
+    const garageIds: string[] = (garages || [])
+      .map((g: any) => g.id)
+      .filter((garageId: unknown): garageId is string => typeof garageId === "string" && garageId.length > 0);
 
     const [profilesRes, ordersRes] = await Promise.all([
       ownerIds.length

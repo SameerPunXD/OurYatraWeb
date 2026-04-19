@@ -110,7 +110,7 @@ const DriverDeliveries = () => {
       case "driver_arriving": return { label: "Pick Up Parcel", next: "picked_up" };
       case "picked_up": return { label: "Start Transit", next: "in_transit" };
       case "in_transit": return { label: "Arrived at Destination", next: "arrived_destination" };
-      case "arrived_destination": return { label: "Verify OTP & Deliver", next: "otp" };
+      case "arrived_destination": return { label: "Verify Code & Deliver", next: "otp" };
       default: return null;
     }
   };

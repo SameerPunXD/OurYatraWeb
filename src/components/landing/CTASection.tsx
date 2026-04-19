@@ -2,13 +2,13 @@ import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+
+const APK_DOWNLOAD_URL = "https://pub-929e021f5760410ca8fa27d5ba2e43af.r2.dev/Ouryatra.apk";
 
 const CTASection = () => {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-80px" });
-  const { toast } = useToast();
   const navigate = useNavigate();
 
   return (
@@ -28,12 +28,14 @@ const CTASection = () => {
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-3">
             <Button
+              asChild
               size="lg"
               className="rounded-lg font-semibold px-10 h-14 text-base bg-background text-foreground hover:bg-background/90 group"
-              onClick={() => toast({ title: "Coming soon", description: "Download App is coming soon." })}
             >
-              Download App
-              <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
+              <a href={APK_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+                Download Our App
+                <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
+              </a>
             </Button>
             <Button
               size="lg"
@@ -43,7 +45,7 @@ const CTASection = () => {
               Earn with Us
             </Button>
           </div>
-          <p className="text-xs text-primary-foreground/80">Download App: Coming soon</p>
+          <p className="text-xs text-primary-foreground/80">Android APK available now</p>
         </motion.div>
       </div>
     </section>

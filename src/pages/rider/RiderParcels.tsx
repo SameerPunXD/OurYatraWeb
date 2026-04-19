@@ -46,7 +46,7 @@ const RiderParcels = () => {
           const status = (payload.new as any).status;
           if (status === "driver_assigned") toast({ title: "Driver assigned!", description: "A driver accepted your parcel." });
           if (status === "picked_up") toast({ title: "Parcel picked up!", description: "Your parcel is on its way." });
-          if (status === "arrived_destination") toast({ title: "Driver arrived!", description: "Share your OTP to confirm delivery." });
+          if (status === "arrived_destination") toast({ title: "Driver arrived!", description: "Share your 6-digit delivery code to confirm delivery." });
           if (status === "delivered") toast({ title: "Parcel delivered!", description: "Your parcel has been delivered." });
         }
       })

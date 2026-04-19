@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import DeliveryVerificationDialog from "@/components/delivery/DeliveryVerificationDialog";
 import { useToast } from "@/hooks/use-toast";
 import { startOfDay } from "date-fns";
 import RatingDisplay from "@/components/RatingDisplay";
@@ -37,6 +38,12 @@ const DriverDashboard = () => {
   const [activeRide, setActiveRide] = useState<any>(null);
   const [activeParcel, setActiveParcel] = useState<any>(null);
   const [activeFoodOrder, setActiveFoodOrder] = useState<any>(null);
+  const [verificationRequest, setVerificationRequest] = useState<{
+    description: string;
+    orderId: string;
+    target: Database["public"]["Enums"]["delivery_verification_target"];
+    title: string;
+  } | null>(null);
 
   const fetchDriverProfile = useCallback(async () => {
     if (!user) return;
@@ -193,6 +200,16 @@ const DriverDashboard = () => {
   };
 
   const updateRideStatus = async (id: string, status: RideStatus) => {
+    if (status === "completed" && activeRide?.ride_type === "parcel") {
+      setVerificationRequest({
+        description: "Enter the 6-digit delivery code provided by the customer to complete this parcel delivery.",
+        orderId: id,
+        target: "parcel_ride",
+        title: "Parcel Delivery Verification",
+      });
+      return;
+    }
+
     const updates: Record<string, any> = { status };
     if (status === "in_progress") updates.started_at = new Date().toISOString();
     if (status === "completed") updates.completed_at = new Date().toISOString();
@@ -201,15 +218,33 @@ const DriverDashboard = () => {
   };
 
   const updateParcelStatus = async (id: string, status: ParcelStatus) => {
+    if (status === "delivered") {
+      setVerificationRequest({
+        description: "Enter the 6-digit delivery code provided by the sender to complete this parcel delivery.",
+        orderId: id,
+        target: "parcel_order",
+        title: "Parcel Delivery Verification",
+      });
+      return;
+    }
+
     const updates: Record<string, any> = { status };
-    if (status === "delivered") updates.delivered_at = new Date().toISOString();
     await supabase.from("parcels").update(updates).eq("id", id);
     fetchIncoming(); fetchStats();
   };
 
   const updateFoodOrderStatus = async (id: string, status: string) => {
+    if (status === "delivered") {
+      setVerificationRequest({
+        description: "Enter the 6-digit delivery code provided by the customer to complete this food order.",
+        orderId: id,
+        target: "food_order",
+        title: "Food Delivery Verification",
+      });
+      return;
+    }
+
     const updates: Record<string, any> = { status };
-    if (status === "delivered") updates.delivered_at = new Date().toISOString();
     await supabase.from("food_orders").update(updates).eq("id", id);
     fetchIncoming(); fetchStats();
   };
@@ -411,6 +446,47 @@ const DriverDashboard = () => {
           </CardContent>
         </Card>
       )}
+
+      <DeliveryVerificationDialog
+        description={verificationRequest?.description || ""}
+        onOpenChange={(open) => { if (!open) setVerificationRequest(null); }}
+        onVerified={async () => {
+          if (verificationRequest?.target === "parcel_order" && activeParcel?.sender_id) {
+            await supabase.rpc("notify_user", {
+              _user_id: activeParcel.sender_id,
+              _title: "Parcel Delivered!",
+              _message: `Your parcel to ${activeParcel.recipient_name} has been delivered.`,
+              _type: "parcel",
+            });
+          }
+
+          if (verificationRequest?.target === "parcel_ride" && activeRide?.rider_id) {
+            await supabase.rpc("notify_user", {
+              _user_id: activeRide.rider_id,
+              _title: "Parcel Delivered!",
+              _message: "Your parcel delivery has been completed.",
+              _type: "parcel",
+            });
+          }
+
+          if (verificationRequest?.target === "food_order" && activeFoodOrder?.customer_id) {
+            await supabase.rpc("notify_user", {
+              _user_id: activeFoodOrder.customer_id,
+              _title: "Order Delivered!",
+              _message: "Your food order has been delivered. Enjoy your meal!",
+              _type: "food",
+            });
+          }
+
+          setVerificationRequest(null);
+          await fetchIncoming();
+          await fetchStats();
+        }}
+        open={!!verificationRequest}
+        orderId={verificationRequest?.orderId || ""}
+        target={verificationRequest?.target || "food_order"}
+        title={verificationRequest?.title || "Delivery Verification"}
+      />
     </div>
   );
 };

@@ -122,8 +122,6 @@ const SendParcel = () => {
     if (!user || !pickup || !dropoff) return;
     setLoading(true);
 
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-
     const { data, error } = await supabase.from("parcels").insert({
       sender_id: user.id,
       pickup_location: pickupName,
@@ -138,13 +136,24 @@ const SendParcel = () => {
       package_type: packageType,
       weight_kg: packageType === "document" ? 0.5 : packageType === "small_parcel" ? 3 : 15,
       fare,
-      delivery_otp: otp,
     } as any).select().single();
 
     if (error) {
       toast({ title: "Failed", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Parcel booked!", description: `Your delivery OTP is ${otp}. Share it at delivery.` });
+      const { data: verificationCode } = await supabase
+        .from("delivery_verification_codes")
+        .select("code")
+        .eq("target", "parcel_order")
+        .eq("order_id", data.id)
+        .maybeSingle();
+
+      toast({
+        title: "Parcel booked!",
+        description: verificationCode?.code
+          ? `Your 6-digit delivery code is ${verificationCode.code}. Share it only when the parcel arrives.`
+          : "Your 6-digit delivery code is now available in parcel tracking.",
+      });
       navigate(`/rider/parcels/${data.id}`);
     }
     setLoading(false);

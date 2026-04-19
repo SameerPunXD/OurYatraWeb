@@ -119,7 +119,7 @@ const DriverParcelHistory = () => {
             { label: "Package Type", value: (selected.package_type || "parcel").replace(/_/g, " ") },
             { label: "Weight", value: selected.weight_kg ? `${selected.weight_kg} kg` : null },
             { label: "Delivery Charge", value: selected.fare ? `Rs ${selected.fare}` : null },
-            { label: "OTP Verified", value: ["delivered", "otp_verified"].includes(selected.status) ? "Yes" : "No" },
+            { label: "Delivery Code Verified", value: ["delivered", "otp_verified"].includes(selected.status) ? "Yes" : "No" },
             { label: "Description", value: selected.package_description },
             { label: "Notes", value: selected.notes },
             { label: "Date", value: format(new Date(selected.created_at), "MMM d, yyyy h:mm a") },

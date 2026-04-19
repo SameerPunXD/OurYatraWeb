@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Copy, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ChatPanel from "@/components/ChatPanel";
 import CallButton from "@/components/CallButton";
@@ -32,6 +32,8 @@ const FoodOrderTracking = () => {
   const [order, setOrder] = useState<any>(null);
   const [restaurant, setRestaurant] = useState<any>(null);
   const [driverProfile, setDriverProfile] = useState<any>(null);
+  const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
+  const [deliveryCodeVerifiedAt, setDeliveryCodeVerifiedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showRating, setShowRating] = useState(false);
   const [hasRated, setHasRated] = useState(false);
@@ -41,6 +43,14 @@ const FoodOrderTracking = () => {
     const { data } = await supabase.from("food_orders").select("*").eq("id", id).single();
     if (data) {
       setOrder(data);
+      const { data: verificationCode } = await supabase
+        .from("delivery_verification_codes")
+        .select("code, verified_at")
+        .eq("target", "food_order")
+        .eq("order_id", id)
+        .maybeSingle();
+      setDeliveryCode(verificationCode?.code || null);
+      setDeliveryCodeVerifiedAt(verificationCode?.verified_at || null);
       const { data: r } = await supabase.from("restaurants").select("*").eq("id", data.restaurant_id).single();
       setRestaurant(r);
       if (data.driver_id) {
@@ -79,6 +89,7 @@ const FoodOrderTracking = () => {
         if (s === "picked_up") toast({ title: "Driver picked up your order!" });
         if (s === "on_the_way") toast({ title: "Your order is on the way!" });
         if (s === "delivered") toast({ title: "Order delivered! Enjoy your meal!" });
+        void fetchOrder();
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [id]);
@@ -88,6 +99,12 @@ const FoodOrderTracking = () => {
     const { error } = await supabase.from("food_orders").update({ status: "cancelled" as any }).eq("id", id);
     if (error) toast({ title: "Failed", description: error.message, variant: "destructive" });
     else { toast({ title: "Order cancelled" }); fetchOrder(); }
+  };
+
+  const copyDeliveryCode = () => {
+    if (!deliveryCode) return;
+    navigator.clipboard.writeText(deliveryCode);
+    toast({ title: "Code copied", description: `Code: ${deliveryCode}` });
   };
 
   if (loading) return <p className="text-muted-foreground">Loading...</p>;
@@ -120,6 +137,28 @@ const FoodOrderTracking = () => {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {deliveryCode && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="p-4 text-center">
+            <ShieldCheck className="mx-auto mb-2 h-8 w-8 text-primary" />
+            <p className="mb-1 text-sm text-muted-foreground">
+              {deliveryCodeVerifiedAt ? "Delivery code used" : "Delivery code — share with the rider at handoff"}
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <p className="text-3xl font-bold tracking-[0.5em] text-primary">{deliveryCode}</p>
+              <Button variant="ghost" size="icon" onClick={copyDeliveryCode}>
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+            {deliveryCodeVerifiedAt ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Verified on {new Date(deliveryCodeVerifiedAt).toLocaleString()}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       )}

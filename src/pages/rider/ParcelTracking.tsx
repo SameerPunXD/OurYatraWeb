@@ -19,7 +19,7 @@ const statusSteps = [
   { key: "picked_up", label: "Picked Up", emoji: "📦" },
   { key: "in_transit", label: "In Transit", emoji: "🚚" },
   { key: "arrived_destination", label: "Arrived", emoji: "📍" },
-  { key: "otp_verified", label: "OTP Verified", emoji: "🔐" },
+  { key: "otp_verified", label: "Code Verified", emoji: "🔐" },
   { key: "delivered", label: "Delivered", emoji: "✅" },
 ];
 
@@ -31,12 +31,22 @@ const ParcelTracking = () => {
   const [parcel, setParcel] = useState<any>(null);
   const [driver, setDriver] = useState<any>(null);
   const [driverDetails, setDriverDetails] = useState<any>(null);
+  const [deliveryCode, setDeliveryCode] = useState<string | null>(null);
+  const [deliveryCodeVerifiedAt, setDeliveryCodeVerifiedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchParcel = async () => {
     if (!id) return;
     const { data } = await supabase.from("parcels").select("*").eq("id", id).single();
     setParcel(data);
+    const { data: verificationCode } = await supabase
+      .from("delivery_verification_codes")
+      .select("code, verified_at")
+      .eq("target", "parcel_order")
+      .eq("order_id", id)
+      .maybeSingle();
+    setDeliveryCode(verificationCode?.code || null);
+    setDeliveryCodeVerifiedAt(verificationCode?.verified_at || null);
     setLoading(false);
     if (data?.driver_id) {
       const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.driver_id).single();
@@ -58,6 +68,7 @@ const ParcelTracking = () => {
           supabase.from("profiles").select("*").eq("id", (payload.new as any).driver_id).single().then(({ data }) => setDriver(data));
           supabase.from("driver_profiles").select("*").eq("id", (payload.new as any).driver_id).single().then(({ data }) => setDriverDetails(data));
         }
+        void fetchParcel();
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -70,10 +81,10 @@ const ParcelTracking = () => {
     else { toast({ title: "Parcel cancelled" }); navigate("/rider/parcels"); }
   };
 
-  const copyOTP = () => {
-    if (parcel?.delivery_otp) {
-      navigator.clipboard.writeText(parcel.delivery_otp);
-      toast({ title: "OTP Copied!", description: `OTP: ${parcel.delivery_otp}` });
+  const copyDeliveryCode = () => {
+    if (deliveryCode) {
+      navigator.clipboard.writeText(deliveryCode);
+      toast({ title: "Code Copied!", description: `Code: ${deliveryCode}` });
     }
   };
 
@@ -83,7 +94,7 @@ const ParcelTracking = () => {
   const currentStep = statusSteps.findIndex(s => s.key === parcel.status);
   const isCancelled = parcel.status === "cancelled";
   const isCompleted = parcel.status === "delivered";
-  const showOTP = ["arrived_destination", "otp_verified", "delivered"].includes(parcel.status);
+  const showDeliveryCode = !isCancelled && !!deliveryCode;
 
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
@@ -130,16 +141,23 @@ const ParcelTracking = () => {
         </Card>
       )}
 
-      {/* OTP Card */}
-      {showOTP && parcel.delivery_otp && (
+      {/* Delivery code card */}
+      {showDeliveryCode && deliveryCode && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="p-4 text-center">
             <ShieldCheck className="h-8 w-8 mx-auto text-primary mb-2" />
-            <p className="text-sm text-muted-foreground mb-1">Delivery OTP — Share with driver at delivery</p>
+            <p className="text-sm text-muted-foreground mb-1">
+              {deliveryCodeVerifiedAt ? "Delivery code used" : "Delivery code — share with driver at delivery"}
+            </p>
             <div className="flex items-center justify-center gap-3">
-              <p className="text-3xl font-bold tracking-[0.5em] text-primary">{parcel.delivery_otp}</p>
-              <Button variant="ghost" size="icon" onClick={copyOTP}><Copy className="h-4 w-4" /></Button>
+              <p className="text-3xl font-bold tracking-[0.5em] text-primary">{deliveryCode}</p>
+              <Button variant="ghost" size="icon" onClick={copyDeliveryCode}><Copy className="h-4 w-4" /></Button>
             </div>
+            {deliveryCodeVerifiedAt ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Verified on {new Date(deliveryCodeVerifiedAt).toLocaleString()}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       )}
